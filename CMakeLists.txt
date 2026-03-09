@@ -28,9 +28,9 @@ link_directories(/root/build/release-install-cpp11/lib)
 # =============================================
 # server 可执行文件
 # =============================================
-add_executable(chatserver
-    src/server/main.cpp
-)
+file(GLOB SOURCES "src/server/*.cpp")
+add_executable(chatserver ${SOURCES})
+
 # target_link_libraries = 告诉链接器：chatserver 这个程序需要用到哪些库
 # 链接顺序有讲究：依赖别人的放前面，被依赖的放后面
 #   muduo_net 依赖 muduo_base → net 放前面
@@ -44,9 +44,9 @@ target_link_libraries(chatserver
 # =============================================
 # client 可执行文件
 # =============================================
-add_executable(chatclient
-    src/client/main.cpp
-)
+file(GLOB SOURCES "src/client/*.cpp")
+add_executable(chatclient ${SOURCES})
+
 target_link_libraries(chatclient
     muduo_net
     muduo_base
