@@ -5,5 +5,4 @@
 *.out
 CMakeFiles/
 CMakeCache.txt
-build/
-.vscode/
+
