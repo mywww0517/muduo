@@ -13,7 +13,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # 头文件搜索路径
 include_directories(/root/build/release-install-cpp11/include)
-include_directories(${CMAKE_SOURCE_DIR}/third_party)
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty)
 include_directories(${CMAKE_SOURCE_DIR}/src/common)  # json_helper.hpp 等公共头文件
 
 # 库文件搜索路径
