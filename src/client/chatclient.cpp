@@ -303,9 +303,22 @@ int main()
 #include <iostream>
 #include <string>
 
+// [DAY5 新增] 主菜单循环里要等待连接、记录登录状态、做简单延时
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+
 #include "protocol.hpp"
-#include "json_helper.hpp"
+
+// [DAY5 修改] 不再使用 json_helper.hpp
+// 原因：现在消息不再只是 msgid + data，而是会有 name/password/id 等多个字段
+#include "json.hpp"
+
 #include "codec.hpp"
+
+// [DAY5 新增] 直接使用 nlohmann::json
+using json = nlohmann::json;
 
 using namespace muduo;
 using namespace muduo::net;
@@ -316,7 +329,10 @@ class ChatClient
 public:
     ChatClient(EventLoop *loop, const InetAddress &serverAddr)
         : loop_(loop),
-          client_(loop, serverAddr, "ChatClient")
+          client_(loop, serverAddr, "ChatClient"),
+          connected_(false),     // [DAY5 新增] 是否已建立 TCP 连接
+          loggedIn_(false),      // [DAY5 新增] 是否已登录
+          currentUserId_(-1)     // [DAY5 新增] 当前登录用户 id
     {
         client_.setConnectionCallback(
             std::bind(&ChatClient::onConnection, this, _1));
@@ -341,7 +357,7 @@ public:
     //   muduo 的 TcpConnection::send() 本身是线程安全的
     //   它内部会判断：如果当前不在 IO 线程，就用 runInLoop 转发
     //   所以这里直接调 conn->send() 就行
-
+    //
     // new:通过codec发送
     void send(const std::string &msg)
     {
@@ -358,6 +374,59 @@ public:
         }
     }
 
+    // [DAY5 新增] 主菜单循环
+    // 原来 main() 里是“自由输入 ping / quit”
+    // 现在改成：
+    //   未登录：register / login / quit
+    //   已登录：ping / logout / quit
+    void mainLoop()
+    {
+        // [DAY5 新增] connect() 是异步的，先等连接建立
+        while (!connected_.load())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        while (true)
+        {
+            // [DAY5 新增] 如果连接已经断开，就退出客户端主循环
+            if (!connected_.load())
+            {
+                std::cout << "连接已断开，客户端退出" << std::endl;
+                break;
+            }
+
+            if (!loggedIn_.load())
+            {
+                showMainMenu();
+            }
+            else
+            {
+                showChatMenu();
+            }
+
+            std::string line;
+            if (!std::getline(std::cin, line))
+            {
+                break;
+            }
+
+            if (line.empty())
+            {
+                continue;
+            }
+
+            if (!loggedIn_.load())
+            {
+                handleMainMenu(line);
+            }
+            else
+            {
+                handleChatMenu(line);
+            }
+        }
+    }
+
 private:
     void onConnection(const TcpConnectionPtr &conn)
     {
@@ -366,16 +435,30 @@ private:
             LOG_INFO << "Connected to " << conn->peerAddress().toIpPort();
 
             // 保存连接，主线程的 send() 要用
-            MutexLockGuard lock(mutex_);
-            conn_ = conn;
+            {
+                MutexLockGuard lock(mutex_);
+                conn_ = conn;
+            }
+
+            // [DAY5 新增] 记录连接状态
+            connected_ = true;
+            std::cout << "✅ 已连接到服务器" << std::endl;
         }
         else
         {
             LOG_INFO << "Disconnected from " << conn->peerAddress().toIpPort();
 
-            MutexLockGuard lock(mutex_);
-            conn_.reset();   // 清空连接
+            {
+                MutexLockGuard lock(mutex_);
+                conn_.reset();   // 清空连接
+            }
 
+            // [DAY5 新增] 连接断开时，客户端状态也一起清空
+            connected_ = false;
+            loggedIn_ = false;
+            currentUserId_ = -1;
+
+            std::cout << "❌ 与服务器断开连接" << std::endl;
             loop_->quit();
         }
     }
@@ -385,18 +468,39 @@ private:
         // 解析服务器返回的 JSON
         try
         {
-            json j = parseMessage(message);
+            // [DAY5 修改] 不再使用 parseMessage(message)
+            // 直接 json::parse(message)
+            json j = json::parse(message);
             int msgid = j["msgid"].get<int>();
 
-            if (msgid == PONG_MSG)
+            // [DAY5 新增] 根据不同 msgid 分别处理响应
+            if (msgid == REG_MSG_ACK)
             {
-                std::cout << "[Recv] " << message << std::endl;
-                std::cout << "  → Server replied PONG ✓" << std::endl;
+                handleRegResponse(j);
             }
-            else if (j.contains("error"))
+            else if (msgid == LOGIN_MSG_ACK)
             {
-                std::cout << "[Recv] " << message << std::endl;
-                std::cout << "  → Server error: " << j["error"] << std::endl;
+                handleLoginResponse(j);
+            }
+            else if (msgid == PONG_MSG)
+            {
+                std::cout << "[PONG] " << j["data"].get<std::string>() << std::endl;
+            }
+            else if (msgid == ERROR_MSG)
+            {
+                // [DAY5 新增] 兼容 error / errmsg 两种字段名
+                if (j.contains("error"))
+                {
+                    std::cout << "[Server Error] " << j["error"].get<std::string>() << std::endl;
+                }
+                else if (j.contains("errmsg"))
+                {
+                    std::cout << "[Server Error] " << j["errmsg"].get<std::string>() << std::endl;
+                }
+                else
+                {
+                    std::cout << "[Server Error] " << j.dump() << std::endl;
+                }
             }
             else
             {
@@ -408,14 +512,209 @@ private:
             std::cerr << "JSON parse error: " << e.what() << std::endl;
         }
 
-        // 打印提示符，让用户知道可以继续输入
-        std::cout << ">>> " << std::flush;
+        // [DAY5 修改] 这里不再像原来那样打印 >>> 提示符
+        // 因为现在已经不是“自由输入模式”，而是菜单模式
     }
 
+    // [DAY5 新增] 处理注册响应
+    void handleRegResponse(const json &j)
+    {
+        int err = j["errno"].get<int>();
+        if (err == 0)
+        {
+            std::cout << "✅ 注册成功！你的 ID = "
+                      << j["id"].get<int>()
+                      << "（请记住这个 ID 用于登录）" << std::endl;
+        }
+        else
+        {
+            std::cout << "❌ 注册失败："
+                      << j["errmsg"].get<std::string>() << std::endl;
+        }
+    }
+
+    // [DAY5 新增] 处理登录响应
+    void handleLoginResponse(const json &j)
+    {
+        int err = j["errno"].get<int>();
+        if (err == 0)
+        {
+            currentUserId_ = j["id"].get<int>();
+            loggedIn_ = true;
+
+            std::cout << "✅ 登录成功！欢迎 "
+                      << j["name"].get<std::string>()
+                      << " (id=" << currentUserId_.load() << ")" << std::endl;
+        }
+        else
+        {
+            std::cout << "❌ 登录失败："
+                      << j["errmsg"].get<std::string>() << std::endl;
+        }
+    }
+
+    // [DAY5 新增] 未登录菜单
+    void showMainMenu()
+    {
+        std::cout << "\n=============================\n";
+        std::cout << "  1. register  (注册)\n";
+        std::cout << "  2. login     (登录)\n";
+        std::cout << "  3. quit      (退出)\n";
+        std::cout << "=============================\n";
+        std::cout << "choice: ";
+    }
+
+    // [DAY5 新增] 登录后菜单
+    void showChatMenu()
+    {
+        std::cout << "\n[已登录 id=" << currentUserId_.load() << "]\n";
+        std::cout << "  ping    - 心跳测试\n";
+        std::cout << "  logout  - 登出\n";
+        std::cout << "  quit    - 退出程序\n";
+        std::cout << ">>> ";
+    }
+
+    // [DAY5 新增] 处理未登录菜单
+    void handleMainMenu(const std::string &choice)
+    {
+        if (choice == "1" || choice == "register")
+        {
+            doRegister();
+        }
+        else if (choice == "2" || choice == "login")
+        {
+            doLogin();
+        }
+        else if (choice == "3" || choice == "quit")
+        {
+            std::cout << "Bye!" << std::endl;
+            shutdownConnection();
+            std::exit(0);
+        }
+        else
+        {
+            std::cout << "无效选项" << std::endl;
+        }
+    }
+
+    // [DAY5 新增] 处理登录后菜单
+    void handleChatMenu(const std::string &cmd)
+    {
+        if (cmd == "ping")
+        {
+            json j;
+            j["msgid"] = PING_MSG;
+            j["data"] = "ping";
+            send(j.dump());
+        }
+        else if (cmd == "logout")
+        {
+            json j;
+            j["msgid"] = LOGOUT_MSG;
+            j["id"] = currentUserId_.load();
+            send(j.dump());
+
+            // [DAY5 简化处理]
+            // 这里先本地清空登录状态，不等待服务端 ACK
+            // 后面如果你实现了 LOGOUT_MSG_ACK，再升级成“等 ACK 再清空”
+            loggedIn_ = false;
+            currentUserId_ = -1;
+
+            std::cout << "已登出" << std::endl;
+        }
+        else if (cmd == "quit")
+        {
+            if (loggedIn_.load())
+            {
+                json j;
+                j["msgid"] = LOGOUT_MSG;
+                j["id"] = currentUserId_.load();
+                send(j.dump());
+
+                // [DAY5 新增] 稍等一下，尽量让 logout 发出去
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            shutdownConnection();
+            std::exit(0);
+        }
+        else
+        {
+            std::cout << "未知命令" << std::endl;
+        }
+    }
+
+    // [DAY5 新增] 注册流程：读输入 -> 组 JSON -> 发送
+    void doRegister()
+    {
+        std::string name, pwd;
+        std::cout << "用户名: ";
+        std::getline(std::cin, name);
+        std::cout << "密  码: ";
+        std::getline(std::cin, pwd);
+
+        json j;
+        j["msgid"] = REG_MSG;
+        j["name"] = name;
+        j["password"] = pwd;
+        send(j.dump());
+
+        // [DAY5 简化处理]
+        // 先简单 sleep 一下，避免回包和菜单提示打印在一起
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    // [DAY5 新增] 登录流程：读输入 -> 组 JSON -> 发送
+    void doLogin()
+    {
+        std::string idStr, pwd;
+        std::cout << "用户 ID: ";
+        std::getline(std::cin, idStr);
+
+        int id = 0;
+        try
+        {
+            id = std::stoi(idStr);
+        }
+        catch (...)
+        {
+            std::cout << "ID 必须是数字" << std::endl;
+            return;
+        }
+
+        std::cout << "密  码: ";
+        std::getline(std::cin, pwd);
+
+        json j;
+        j["msgid"] = LOGIN_MSG;
+        j["id"] = id;
+        j["password"] = pwd;
+        send(j.dump());
+
+        // [DAY5 简化处理] 同上
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    // [DAY5 新增] 安全关闭连接
+    void shutdownConnection()
+    {
+        MutexLockGuard lock(mutex_);
+        if (conn_)
+        {
+            conn_->shutdown();
+        }
+    }
+
+private:
     EventLoop *loop_;
     TcpClient client_;
     TcpConnectionPtr conn_;
     MutexLock mutex_;          // 保护 conn_（主线程写，IO 线程也写）
+
+    // [DAY5 新增] 客户端状态
+    std::atomic<bool> connected_;
+    std::atomic<bool> loggedIn_;
+    std::atomic<int> currentUserId_;
 };
 
 int main()
@@ -442,33 +741,12 @@ int main()
     client.connect();
 
     std::cout << "Connecting to ChatServer 127.0.0.1:8888 ..." << std::endl;
-    std::cout << "Commands: ping | quit" << std::endl;
 
-    // 主线程：读取用户输入，构造 JSON 消息发送
-    std::string line;
-    while (std::cout << ">>> " && std::getline(std::cin, line))
-    {
-        if (line == "quit") break;
-        if (line.empty()) continue;
+    // [DAY5 修改] 原来 main() 里自己写 while(getline)
+    // 现在改成让 ChatClient 进入菜单循环
+    client.mainLoop();
 
-        std::string request;
-
-        if (line == "ping")
-        {
-            request = makeMessage(PING_MSG, "ping");
-        }
-        else
-        {
-            request = makeMessage(-1, line);
-        }
-
-        std::cout << "[Send] " << request << std::endl;
-        client.send(request);
-    }
-
-    // 用户输入 quit 后，关闭连接
-    // 不需要手动 close，TcpClient 析构时会处理
+    // 用户退出后，程序结束
     std::cout << "Disconnected" << std::endl;
-
     return 0;
 }

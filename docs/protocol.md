@@ -42,21 +42,44 @@ TCP 是字节流协议，不保证消息边界。采用 **长度头 + payload** 
 
     {"msgid": 2, "data": "pong"}
 
-### 3.2 错误响应
+注册
+请求：
 
-当服务端无法处理请求时：
+{"msgid": 3, "name": "alice", "password": "123456"}
+成功响应：
 
-    {"msgid": 0, "error": "错误描述"}
+{"msgid": 4, "errno": 0, "id": 1}
+失败响应：
 
-## 4. 消息 ID 定义
+{"msgid": 4, "errno": 1, "errmsg": "register failed, name already exists"}
+登录
+请求：
+
+{"msgid": 5, "id": 1, "password": "123456"}
+成功响应：
+
+{"msgid": 6, "errno": 0, "id": 1, "name": "alice"}
+密码错误/用户不存在：
+
+{"msgid": 6, "errno": 1, "errmsg": "id or password error"}
+重复登录：
+
+{"msgid": 6, "errno": 2, "errmsg": "user already online"}
+登出
+请求：
+
+{"msgid": 7, "id": 1}
 
 | msgid | 名称 | 方向 | 说明 |
-|-------|------|------|------|
+|------:|------|------|------|
 | 0 | ERROR | S → C | 错误响应 |
 | 1 | PING | C → S | 心跳请求 |
 | 2 | PONG | S → C | 心跳响应 |
-
-> 后续扩展：登录(3)、注册(4)、单聊(5)、群聊(6) 等
+| 3 | REG | C → S | 注册请求 |
+| 4 | REG_ACK | S → C | 注册响应 |
+| 5 | LOGIN | C → S | 登录请求 |
+| 6 | LOGIN_ACK | S → C | 登录响应 |
+| 7 | LOGOUT | C → S | 登出请求 |
 
 ## 5. 交互流程
 
