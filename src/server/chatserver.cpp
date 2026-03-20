@@ -2,13 +2,11 @@
 #include <muduo/net/EventLoop.h>
 #include <muduo/base/Logging.h>
 
-#include <functional>
-#include <string>
-
-#include "protocol.hpp"
-#include "json_helper.hpp"
 #include "codec.hpp"
+#include "chatservice.hpp"
+#include "json.hpp"
 
+using json = nlohmann::json;
 using namespace muduo;
 using namespace muduo::net;
 using namespace std::placeholders;
@@ -30,7 +28,7 @@ public:
                         std::bind(&ChatServer::onJsonMessage, this, _1, _2, _3));
                 }
             );
-            server_.setThreadNum(2);
+            server_.setThreadNum(4);
     }
 
     void start(){
@@ -44,6 +42,7 @@ private:
         }
         else{
             LOG_INFO << "连接关闭：" << conn->peerAddress().toIpPort();
+            ChatService::instance().clientCloseException(conn);
         }
     }
 
@@ -95,10 +94,15 @@ private:
         LOG_INFO << "收到消息: " << message;
 
         try{
-            json request = parseMessage(message);
+            json js = json::parse(message);
 
-            int msgid = request["msgid"].get<int>();
+            int msgid = js["msgid"].get<int>();
 
+            // 根据 msgid 分发到对应 handler
+            auto handler = ChatService::instance().getHandler(msgid);
+            handler(conn, js, time);
+
+            /*
             switch(msgid){
             case PING_MSG:{
                 LOG_INFO << "Got PING from: " << conn->peerAddress().toIpPort();
@@ -117,15 +121,14 @@ private:
                 conn->send(errResp.dump());
                 break;
             }
-            }
+            */
         }
         catch (const json::exception &e){
             LOG_ERROR << "JSON解析失败：" << e.what();
-
-            json errResp;
-            errResp["msgid"] = -1;
-            errResp["error"] = "invaild json";
-            conn->send(errResp.dump());
+            json response;
+            response["msgid"] = 0;
+            response["error"] = "invaild json";
+            conn->send(response.dump());
         }
     } 
 
@@ -133,8 +136,17 @@ private:
 };
 
 int main(){
+    // 初始化业务层（连接数据库等）
+    if (!ChatService::instance().init()) {
+        LOG_FATAL << "ChatService init failed";
+        return 1;
+    }
+
+    // 重置所有用户状态
+    ChatService::instance().reset();
+
     EventLoop loop;
-    InetAddress addr("0.0.0.0",8888);
+    InetAddress addr(8888);
 
     ChatServer server(&loop, addr, "ChatServer");
     server.start();

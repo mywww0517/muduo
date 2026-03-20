@@ -13,7 +13,10 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 # 头文件搜索路径
 include_directories(/root/build/release-install-cpp11/include)
-include_directories(${CMAKE_SOURCE_DIR}/third_party)
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty)
+include_directories(${CMAKE_SOURCE_DIR}/src/db)
+include_directories(${CMAKE_SOURCE_DIR}/src/model)
+include_directories(${CMAKE_SOURCE_DIR}/src/server)
 include_directories(${CMAKE_SOURCE_DIR}/src/common)  # json_helper.hpp 等公共头文件
 
 # 库文件搜索路径
@@ -25,8 +28,11 @@ set(MUDUO_LIBS muduo_net muduo_base pthread)
 # server 可执行文件
 add_executable(chatserver
     src/server/chatserver.cpp
+    src/server/chatservice.cpp
+    src/db/db.cpp
+    src/model/usermodel.cpp
 )
-target_link_libraries(chatserver ${MUDUO_LIBS})
+target_link_libraries(chatserver ${MUDUO_LIBS} mysqlclient)
 
 add_executable(echoserver
     src/server/echoserver.cpp
@@ -48,3 +54,24 @@ target_link_libraries(echoclient ${MUDUO_LIBS})
 # 粘包压力测试
 add_executable(stresstest src/client/stresstest.cpp)
 target_link_libraries(stresstest ${MUDUO_LIBS})
+
+add_executable(test_db
+    src/db/test_db.cpp
+    src/db/db.cpp
+)
+target_link_libraries(test_db
+    muduo_base
+    mysqlclient
+    pthread
+)
+
+add_executable(test_model
+    src/db/test_model.cpp
+    src/db/db.cpp
+    src/model/usermodel.cpp
+)
+target_link_libraries(test_model
+    muduo_base
+    mysqlclient
+    pthread
+)
