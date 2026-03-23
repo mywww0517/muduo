@@ -1,3 +1,4 @@
+#pragma once
 #ifndef PROTOCOL_HPP
 #define PROTOCOL_HPP
 
@@ -6,16 +7,22 @@
 //   2. 在调试器里能看到名字而不是数字
 //   3. 现代 C++ 推荐 enum class，但普通 enum 兼容性更好
 enum MsgId{
+    // 错误
+    ERROR_MSG       = 0,
+
     PING_MSG = 1,   //心跳请求
     PONG_MSG = 2,   //心跳响应
 
-    // ---- 后续扩展 ----
-    // LOGIN_REQ = 3,
-    // LOGIN_RSP = 4,
-    // REG_REQ   = 5,
-    // REG_RSP   = 6,
-    // CHAT_MSG  = 7,
-    // CHAT_MSG_ACK = 8,
+    // 注册
+    REG_MSG         = 3,
+    REG_MSG_ACK     = 4,
+
+    // 登录
+    LOGIN_MSG       = 5,
+    LOGIN_MSG_ACK   = 6,
+
+    // 登出
+    LOGOUT_MSG      = 7,
 };
 
 
