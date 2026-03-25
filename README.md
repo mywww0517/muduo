@@ -1,4 +1,4 @@
-# MyMuduo Chat v0.3
+# MyMuduo Chat v0.4
 
 一个基于 **C++11 / muduo / MySQL** 的轻量级聊天服务器学习项目。
 项目重点练习以下内容：
@@ -10,33 +10,41 @@
 - 用户注册 / 登录 / 登出与数据库持久化
 - 密码安全存储（SHA256 哈希）
 - 在线状态管理与重复登录检测
+- 好友系统与一对一聊天
+- 群组聊天
+- 离线消息存储与推送
 
-> 当前版本 **v0.3** 的重点是完善”认证安全”：
+> 当前版本 **v0.4** 的重点是实现”完整聊天功能”：
 >
-> **密码 SHA256 哈希 + 在线状态管理 + 重复登录检测**
+> **好友管理 + 一对一聊天 + 群组聊天 + 离线消息**
 
 ---
 
 ## 项目简介
 
-`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个具备用户系统雏形的聊天服务端。
+`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个功能完整的聊天服务端。
 
-相比 v0.2，v0.3 主要新增了：
+相比 v0.3，v0.4 主要新增了：
 
-- **密码安全存储**：使用 SHA256 哈希算法，注册时自动哈希，登录时验证哈希值
-- **在线状态管理**：内存 + 数据库双层设计，支持断线自动清理
-- **重复登录检测**：防止同一账号多端登录，返回明确错误码
-- **配置安全**：通过环境变量读取数据库密码，不硬编码敏感信息
-- **依赖 OpenSSL**：链接 libcrypto 库实现密码哈希
+- **好友系统**：添加好友、查询好友列表、好友在线状态显示
+- **一对一聊天**：发送消息给在线好友（实时转发）或离线好友（存储离线消息）
+- **群组功能**：创建群组、加入群组、群消息广播
+- **离线消息**：登录时自动拉取离线消息并清空
+- **数据模型扩展**：FriendModel、GroupModel、OfflineMsgModel
+
+v0.3 已完成的功能：
+- 密码安全存储（SHA256 哈希）
+- 在线状态管理（内存 + 数据库双层设计）
+- 重复登录检测
+- 断线自动清理
 
 v0.2 已完成的功能：
 - 用户注册 / 登录 / 登出流程
-- 基于 **MySQL** 的用户数据持久化
-- `ChatService` 业务层，引入按 `msgid` 路由分发的设计
-- `UserModel` 数据访问层，负责用户表操作
-- `DB` 数据库封装层，统一管理 MySQL 连接
+- 基于 MySQL 的用户数据持久化
+- ChatService 业务层，按 msgid 路由分发
+- UserModel 数据访问层
+- DB 数据库封装层
 - 客户端菜单式交互
-- 项目结构从网络样例演进为分层聊天系统
 
 ---
 
@@ -60,12 +68,17 @@ v0.2 已完成的功能：
 - 接收客户端 JSON 请求
 - 按 `msgid` 分发到对应业务处理函数
 - 当前支持：
-  - `PING_MSG`
-  - `REG_MSG`
-  - `LOGIN_MSG`
-  - `LOGOUT_MSG`
+  - `PING_MSG` - 心跳
+  - `REG_MSG` - 注册
+  - `LOGIN_MSG` - 登录（返回好友列表、群组列表、离线消息）
+  - `LOGOUT_MSG` - 登出
+  - `ADD_FRIEND_MSG` - 添加好友
+  - `CHAT_MSG` - 一对一聊天（在线转发/离线存储）
+  - `CREATE_GROUP_MSG` - 创建群组
+  - `JOIN_GROUP_MSG` - 加入群组
+  - `GROUP_CHAT_MSG` - 群聊消息广播
 - 启动时初始化数据库连接
-- 数据库初始化失败时直接退出，避免带着错误状态运行
+- 数据库初始化失败时直接退出
 
 ### 客户端
 
@@ -75,20 +88,25 @@ v0.2 已完成的功能：
   - `login`（登录）
   - `quit`（退出）
 - 已登录状态支持：
-  - `ping`（心跳测试）
-  - `logout`（登出）
-  - `quit`（退出程序）
+  - `chat <friendid> <msg>` - 发送消息给好友
+  - `addfriend <friendid>` - 添加好友
+  - `creategroup <name>` - 创建群组
+  - `joingroup <groupid>` - 加入群组
+  - `groupchat <groupid> <msg>` - 发送群消息
+  - `ping` - 心跳测试
+  - `logout` - 登出
+  - `quit` - 退出程序
 
 ---
 
 ## 当前版本说明
 
-- v0.3 当前重点是完善 **认证安全与状态管理**
-- **密码存储采用 SHA256 哈希**，注册时自动哈希，登录时验证哈希值
-- **在线状态管理**：内存（userConnMap_）+ 数据库（user.state）双层设计
-- **重复登录检测**：检查内存和数据库状态，拒绝重复登录（errno=2）
-- **断线自动清理**：连接断开时自动清理内存映射并更新数据库状态
-- 登出流程当前已支持请求发送与客户端状态切换，后续可进一步完善为严格 ACK 确认机制
+- v0.4 当前重点是实现 **完整聊天功能**
+- **好友系统**：添加好友、登录时返回好友列表及在线状态
+- **一对一聊天**：在线用户实时转发，离线用户存储到 offlinemessage 表
+- **群组功能**：创建群、加入群、群消息广播给所有成员（在线转发/离线存储）
+- **离线消息**：登录时自动拉取并清空离线消息
+- **数据模型**：FriendModel、GroupModel、OfflineMsgModel
 - **已知限制**：SQL 使用字符串拼接（存在注入风险），SHA256 未加盐，后续版本可改进
 
 ---
@@ -137,16 +155,48 @@ sudo cmake --install build
 CREATE DATABASE IF NOT EXISTS chat DEFAULT CHARACTER SET utf8mb4;
 ```
 
-#### 4.2 创建用户表
+#### 4.2 创建表
 
 ```sql
 USE chat;
 
+-- 用户表
 CREATE TABLE IF NOT EXISTS user (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(50) NOT NULL UNIQUE,
     password VARCHAR(64) NOT NULL,
     state ENUM('online', 'offline') NOT NULL DEFAULT 'offline'
+);
+
+-- 好友表
+CREATE TABLE IF NOT EXISTS friend (
+    userid INT NOT NULL,
+    friendid INT NOT NULL,
+    PRIMARY KEY(userid, friendid)
+);
+
+-- 群组表
+CREATE TABLE IF NOT EXISTS allgroup (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    groupname VARCHAR(50) NOT NULL UNIQUE,
+    groupdesc VARCHAR(200) DEFAULT ''
+);
+
+-- 群成员表
+CREATE TABLE IF NOT EXISTS groupuser (
+    groupid INT NOT NULL,
+    userid INT NOT NULL,
+    grouprole ENUM('creator', 'normal') DEFAULT 'normal',
+    PRIMARY KEY(groupid, userid)
+);
+
+-- 离线消息表
+CREATE TABLE IF NOT EXISTS offlinemessage (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    userid INT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX(userid)
 );
 ```
 
@@ -329,11 +379,87 @@ quit    - 退出程序
 ✅ 登录成功！欢迎 alice (id=1)
 ```
 
-**注意：服务端会对输入密码进行 SHA256 哈希后与数据库中的哈希值比对。**
+**登录时会自动返回：**
+- 好友列表（id、name、state）
+- 群组列表（id、name、desc、成员列表）
+- 离线消息（自动拉取并清空）
 
 ---
 
-### 3）心跳测试
+### 3）添加好友
+
+登录后输入：
+
+```text
+addfriend 2
+```
+
+返回：
+
+```text
+✅ 添加好友成功
+```
+
+---
+
+### 4）一对一聊天
+
+登录后输入：
+
+```text
+chat 2 Hello, Bob!
+```
+
+- 如果好友在线：实时转发
+- 如果好友离线：存储到 offlinemessage 表，下次登录时推送
+
+---
+
+### 5）创建群组
+
+登录后输入：
+
+```text
+creategroup MyGroup
+```
+
+返回：
+
+```text
+✅ 创建群组成功，群ID=1
+```
+
+---
+
+### 6）加入群组
+
+登录后输入：
+
+```text
+joingroup 1
+```
+
+返回：
+
+```text
+✅ 加入群组成功
+```
+
+---
+
+### 7）群聊
+
+登录后输入：
+
+```text
+groupchat 1 Hello, everyone!
+```
+
+消息会广播给群内所有成员（在线转发 / 离线存储）。
+
+---
+
+### 8）心跳测试
 
 登录后输入：
 
@@ -349,7 +475,7 @@ ping
 
 ---
 
-### 4）登出
+### 9）登出
 
 登录后输入：
 
@@ -773,17 +899,19 @@ CREATE DATABASE chat;
 - [x] 在线状态管理（内存 + 数据库）
 - [x] 重复登录检测
 - [x] 断线自动清理
+- [x] 好友系统（添加好友、好友列表）
+- [x] 一对一聊天（在线转发 / 离线存储）
+- [x] 群组功能（创建群、加入群、群聊）
+- [x] 离线消息（存储、登录时拉取）
 
 ### 计划中
 
-- [ ] 登录后的正式聊天命令
-- [ ] 一对一聊天
-- [ ] 群聊
-- [ ] 离线消息
-- [ ] 好友系统
 - [ ] 更完整的错误码与 ACK 机制
 - [ ] 更严格的状态一致性处理
+- [ ] SQL 预编译语句（防注入）
+- [ ] 密码加盐哈希
 - [ ] 配置文件化与脚本完善
+- [ ] 集群部署（负载均衡、Redis 共享状态）
 
 ---
 
@@ -794,6 +922,7 @@ CREATE DATABASE chat;
 | v0.1 | 基础框架：echo + JSON 协议 + codec + 压力测试 |
 | v0.2 | 用户系统：MySQL + 注册 / 登录 / 登出 + ChatService 分层 + 菜单客户端 |
 | v0.3 | 认证安全：SHA256 密码哈希 + 在线状态管理 + 重复登录检测 + 断线清理 |
+| v0.4 | 聊天功能：好友系统 + 一对一聊天 + 群组聊天 + 离线消息 |
 
 ---
 

@@ -17,11 +17,28 @@ ChatService::ChatService() {
     msgHandlerMap_[REG_MSG]    = std::bind(&ChatService::reg, this, _1, _2, _3);
     msgHandlerMap_[LOGIN_MSG]  = std::bind(&ChatService::login, this, _1, _2, _3);
     msgHandlerMap_[LOGOUT_MSG] = std::bind(&ChatService::logout, this, _1, _2, _3);
+    msgHandlerMap_[ADD_FRIEND_MSG] = std::bind(&ChatService::addFriend, this, _1, _2, _3);
+    msgHandlerMap_[CHAT_MSG] = std::bind(&ChatService::oneChat, this, _1, _2, _3);
+    msgHandlerMap_[CREATE_GROUP_MSG] = std::bind(&ChatService::createGroup, this, _1, _2, _3);
+    msgHandlerMap_[JOIN_GROUP_MSG] = std::bind(&ChatService::joinGroup, this, _1, _2, _3);
+    msgHandlerMap_[GROUP_CHAT_MSG] = std::bind(&ChatService::groupChat, this, _1, _2, _3);
 }
 
 bool ChatService::init() {
     if (!userModel_.init()) {
-        LOG_ERROR << "ChatService init failed: MySQL connect error";
+        LOG_ERROR << "ChatService init failed: userModel init error";
+        return false;
+    }
+    if (!friendModel_.init()) {
+        LOG_ERROR << "ChatService init failed: friendModel init error";
+        return false;
+    }
+    if (!groupModel_.init()) {
+        LOG_ERROR << "ChatService init failed: groupModel init error";
+        return false;
+    }
+    if (!offlineMsgModel_.init()) {
+        LOG_ERROR << "ChatService init failed: offlineMsgModel init error";
         return false;
     }
     return true;
@@ -118,8 +135,52 @@ void ChatService::login(const TcpConnectionPtr& conn, json& js, Timestamp) {
     response["errno"] = 0;
     response["id"]    = user.id();
     response["name"]  = user.name();
-    LOG_INFO << "login success: id=" << id << " name=" << user.name();
 
+    // 查询好友列表
+    std::vector<User> friends = friendModel_.query(id);
+    if (!friends.empty()) {
+        json friendList = json::array();
+        for (auto& f : friends) {
+            json item;
+            item["id"] = f.id();
+            item["name"] = f.name();
+            item["state"] = f.state();
+            friendList.push_back(item);
+        }
+        response["friends"] = friendList;
+    }
+
+    // 查询群组列表
+    std::vector<GroupInfo> groups = groupModel_.queryGroups(id);
+    if (!groups.empty()) {
+        json groupList = json::array();
+        for (auto& g : groups) {
+            json item;
+            item["id"] = g.group.id();
+            item["name"] = g.group.name();
+            item["desc"] = g.group.desc();
+            json users = json::array();
+            for (auto& u : g.users) {
+                json uitem;
+                uitem["id"] = u.id();
+                uitem["name"] = u.name();
+                uitem["state"] = u.state();
+                users.push_back(uitem);
+            }
+            item["users"] = users;
+            groupList.push_back(item);
+        }
+        response["groups"] = groupList;
+    }
+
+    // 查询离线消息
+    std::vector<std::string> offlineMsgs = offlineMsgModel_.query(id);
+    if (!offlineMsgs.empty()) {
+        response["offlinemsgs"] = offlineMsgs;
+        offlineMsgModel_.remove(id);
+    }
+
+    LOG_INFO << "login success: id=" << id << " name=" << user.name();
     codecSend(conn, response.dump());
 }
 
@@ -171,4 +232,99 @@ void ChatService::clientCloseException(const TcpConnectionPtr& conn) {
 
 void ChatService::reset() {
     userModel_.resetState();
+}
+
+void ChatService::addFriend(const TcpConnectionPtr& conn, json& js, Timestamp) {
+    int userid = js["id"].get<int>();
+    int friendid = js["friendid"].get<int>();
+
+    json response;
+    response["msgid"] = ADD_FRIEND_ACK;
+
+    if (friendModel_.insert(userid, friendid)) {
+        response["errno"] = 0;
+        LOG_INFO << "add friend: " << userid << " -> " << friendid;
+    } else {
+        response["errno"] = 1;
+        response["errmsg"] = "add friend failed";
+    }
+
+    codecSend(conn, response.dump());
+}
+
+void ChatService::oneChat(const TcpConnectionPtr& conn, json& js, Timestamp) {
+    int toid = js["to"].get<int>();
+
+    {
+        std::lock_guard<std::mutex> lock(connMutex_);
+        auto it = userConnMap_.find(toid);
+        if (it != userConnMap_.end()) {
+            codecSend(it->second, js.dump());
+            return;
+        }
+    }
+
+    offlineMsgModel_.insert(toid, js.dump());
+}
+
+void ChatService::createGroup(const TcpConnectionPtr& conn, json& js, Timestamp) {
+    int userid = js["id"].get<int>();
+    std::string name = js["groupname"];
+    std::string desc = js.value("groupdesc", "");
+
+    Group group;
+    group.setName(name);
+    group.setDesc(desc);
+
+    json response;
+    response["msgid"] = CREATE_GROUP_ACK;
+
+    if (groupModel_.createGroup(group)) {
+        groupModel_.addToGroup(userid, group.id(), "creator");
+        response["errno"] = 0;
+        response["groupid"] = group.id();
+        LOG_INFO << "create group: " << group.id() << " by user " << userid;
+    } else {
+        response["errno"] = 1;
+        response["errmsg"] = "create group failed";
+    }
+
+    codecSend(conn, response.dump());
+}
+
+void ChatService::joinGroup(const TcpConnectionPtr& conn, json& js, Timestamp) {
+    int userid = js["id"].get<int>();
+    int groupid = js["groupid"].get<int>();
+
+    json response;
+    response["msgid"] = JOIN_GROUP_ACK;
+
+    if (groupModel_.addToGroup(userid, groupid, "normal")) {
+        response["errno"] = 0;
+        LOG_INFO << "join group: user " << userid << " -> group " << groupid;
+    } else {
+        response["errno"] = 1;
+        response["errmsg"] = "join group failed";
+    }
+
+    codecSend(conn, response.dump());
+}
+
+void ChatService::groupChat(const TcpConnectionPtr& conn, json& js, Timestamp) {
+    int groupid = js["groupid"].get<int>();
+    int userid = js["id"].get<int>();
+
+    std::vector<int> users = groupModel_.queryGroupUsers(groupid);
+
+    std::lock_guard<std::mutex> lock(connMutex_);
+    for (int id : users) {
+        if (id == userid) continue;
+
+        auto it = userConnMap_.find(id);
+        if (it != userConnMap_.end()) {
+            codecSend(it->second, js.dump());
+        } else {
+            offlineMsgModel_.insert(id, js.dump());
+        }
+    }
 }
