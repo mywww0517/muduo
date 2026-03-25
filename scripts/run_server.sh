@@ -13,6 +13,11 @@ if [ ! -x "$SERVER" ]; then
     exit 1
 fi
 
+# 加载数据库配置
+set -a
+source "${PROJECT_DIR}/config/db.env"
+set +a
+
 PORT=${1:-8888}
 echo "Starting ChatServer on port ${PORT}..."
 echo "Press Ctrl+C to stop."

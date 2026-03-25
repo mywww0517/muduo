@@ -1,4 +1,5 @@
 #include "usermodel.hpp"
+#include "crypto.hpp"
 #include <cstdio>
 #include <cstdlib>
 
@@ -8,11 +9,13 @@ bool UserModel::init() {
 }
 
 bool UserModel::insert(User& user){
+    std::string hashedPwd = sha256(user.password());
+
     char sql[1024] = {0};
     snprintf(sql,sizeof(sql),
         "INSERT INTO user(name, password, state) VALUES('%s', '%s', '%s')",
-        user.name().c_str(), user.password().c_str(), user.state().c_str());
-    
+        user.name().c_str(), hashedPwd.c_str(), user.state().c_str());
+
     std::lock_guard<std::mutex> lock(dbMutex_);
     if (mysql_.update(sql)) {
         user.setId(static_cast<int>(mysql_insert_id(mysql_.getConnection())));
