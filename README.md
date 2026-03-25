@@ -1,6 +1,6 @@
-# MyMuduo Chat v0.2
+# MyMuduo Chat v0.3
 
-一个基于 **C++11 / muduo / MySQL** 的轻量级聊天服务器学习项目。  
+一个基于 **C++11 / muduo / MySQL** 的轻量级聊天服务器学习项目。
 项目重点练习以下内容：
 
 - Linux 下的网络编程与 Reactor 模型
@@ -8,10 +8,12 @@
 - TCP 粘包 / 半包处理
 - 服务端业务分层与消息路由
 - 用户注册 / 登录 / 登出与数据库持久化
+- 密码安全存储（SHA256 哈希）
+- 在线状态管理与重复登录检测
 
-> 当前版本 **v0.2** 的重点是打通“认证链路”：
+> 当前版本 **v0.3** 的重点是完善”认证安全”：
 >
-> **Client -> codec -> JSON -> ChatService -> UserModel -> MySQL**
+> **密码 SHA256 哈希 + 在线状态管理 + 重复登录检测**
 
 ---
 
@@ -19,15 +21,21 @@
 
 `MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个具备用户系统雏形的聊天服务端。
 
-相比 v0.1，v0.2 主要新增了：
+相比 v0.2，v0.3 主要新增了：
 
+- **密码安全存储**：使用 SHA256 哈希算法，注册时自动哈希，登录时验证哈希值
+- **在线状态管理**：内存 + 数据库双层设计，支持断线自动清理
+- **重复登录检测**：防止同一账号多端登录，返回明确错误码
+- **配置安全**：通过环境变量读取数据库密码，不硬编码敏感信息
+- **依赖 OpenSSL**：链接 libcrypto 库实现密码哈希
+
+v0.2 已完成的功能：
 - 用户注册 / 登录 / 登出流程
 - 基于 **MySQL** 的用户数据持久化
 - `ChatService` 业务层，引入按 `msgid` 路由分发的设计
 - `UserModel` 数据访问层，负责用户表操作
 - `DB` 数据库封装层，统一管理 MySQL 连接
-- 客户端从“自由输入文本”升级为“菜单式交互”
-- 服务端通过环境变量读取数据库配置
+- 客户端菜单式交互
 - 项目结构从网络样例演进为分层聊天系统
 
 ---
@@ -75,11 +83,13 @@
 
 ## 当前版本说明
 
-- v0.2 当前重点是完成 **注册 / 登录认证链路闭环**
-- 在线状态目前以数据库字段维护为主，后续仍可继续优化
-- 当前版本以功能验证和架构演进为主，**密码存储采用简化方案**
-- 生产环境中应使用 **加盐哈希** 等更安全的密码存储方式
+- v0.3 当前重点是完善 **认证安全与状态管理**
+- **密码存储采用 SHA256 哈希**，注册时自动哈希，登录时验证哈希值
+- **在线状态管理**：内存（userConnMap_）+ 数据库（user.state）双层设计
+- **重复登录检测**：检查内存和数据库状态，拒绝重复登录（errno=2）
+- **断线自动清理**：连接断开时自动清理内存映射并更新数据库状态
 - 登出流程当前已支持请求发送与客户端状态切换，后续可进一步完善为严格 ACK 确认机制
+- **已知限制**：SQL 使用字符串拼接（存在注入风险），SHA256 未加盐，后续版本可改进
 
 ---
 
@@ -99,10 +109,11 @@
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y g++ cmake make libboost-all-dev default-libmysqlclient-dev
+sudo apt-get install -y g++ cmake make libboost-all-dev default-libmysqlclient-dev libssl-dev
 ```
 
 > `nlohmann/json` 以单头文件形式放在 `thirdparty/json.hpp` 中，无需额外安装。
+> `libssl-dev` 用于 SHA256 密码哈希。
 
 ---
 
@@ -134,7 +145,7 @@ USE chat;
 CREATE TABLE IF NOT EXISTS user (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(50) NOT NULL UNIQUE,
-    password VARCHAR(50) NOT NULL,
+    password VARCHAR(64) NOT NULL,
     state ENUM('online', 'offline') NOT NULL DEFAULT 'offline'
 );
 ```
@@ -293,6 +304,8 @@ quit    - 退出程序
 ✅ 注册成功！你的 ID = 1
 ```
 
+**注意：密码会自动使用 SHA256 哈希后存储到数据库。**
+
 ---
 
 ### 2）登录
@@ -315,6 +328,8 @@ quit    - 退出程序
 ```text
 ✅ 登录成功！欢迎 alice (id=1)
 ```
+
+**注意：服务端会对输入密码进行 SHA256 哈希后与数据库中的哈希值比对。**
 
 ---
 
@@ -754,6 +769,10 @@ CREATE DATABASE chat;
 - [x] 用户登出
 - [x] 客户端菜单化
 - [x] 服务端基础分层（Service / Model / DB）
+- [x] 密码 SHA256 哈希存储
+- [x] 在线状态管理（内存 + 数据库）
+- [x] 重复登录检测
+- [x] 断线自动清理
 
 ### 计划中
 
@@ -774,6 +793,7 @@ CREATE DATABASE chat;
 |---|---|
 | v0.1 | 基础框架：echo + JSON 协议 + codec + 压力测试 |
 | v0.2 | 用户系统：MySQL + 注册 / 登录 / 登出 + ChatService 分层 + 菜单客户端 |
+| v0.3 | 认证安全：SHA256 密码哈希 + 在线状态管理 + 重复登录检测 + 断线清理 |
 
 ---
 

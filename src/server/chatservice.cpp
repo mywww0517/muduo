@@ -1,4 +1,5 @@
 #include "chatservice.hpp"
+#include "crypto.hpp"
 #include <muduo/base/Logging.h>
 #include <functional>
 
@@ -81,7 +82,7 @@ void ChatService::login(const TcpConnectionPtr& conn, json& js, Timestamp) {
     json response;
     response["msgid"] = LOGIN_MSG_ACK;
 
-    if (user.id() == -1 || user.password() != pwd) {
+    if (user.id() == -1 || user.password() != sha256(pwd)) {
         response["errno"]  = 1;
         response["errmsg"] = "id or password error";
         LOG_WARN << "login failed: id=" << id;
