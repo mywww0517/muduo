@@ -302,6 +302,7 @@ int main()
 #include <functional>
 #include <iostream>
 #include <string>
+#include <sstream>
 
 // [DAY5 新增] 主菜单循环里要等待连接、记录登录状态、做简单延时
 #include <thread>
@@ -375,7 +376,7 @@ public:
     }
 
     // [DAY5 新增] 主菜单循环
-    // 原来 main() 里是“自由输入 ping / quit”
+    // 原来 main() 里是"自由输入 ping / quit"
     // 现在改成：
     //   未登录：register / login / quit
     //   已登录：ping / logout / quit
@@ -468,12 +469,9 @@ private:
         // 解析服务器返回的 JSON
         try
         {
-            // [DAY5 修改] 不再使用 parseMessage(message)
-            // 直接 json::parse(message)
             json j = json::parse(message);
             int msgid = j["msgid"].get<int>();
 
-            // [DAY5 新增] 根据不同 msgid 分别处理响应
             if (msgid == REG_MSG_ACK)
             {
                 handleRegResponse(j);
@@ -486,9 +484,46 @@ private:
             {
                 std::cout << "[PONG] " << j["data"].get<std::string>() << std::endl;
             }
+            else if (msgid == ADD_FRIEND_ACK)
+            {
+                int err = j["errno"].get<int>();
+                if (err == 0) {
+                    std::cout << "✅ 添加好友成功" << std::endl;
+                } else {
+                    std::cout << "❌ 添加好友失败: " << j["errmsg"].get<std::string>() << std::endl;
+                }
+            }
+            else if (msgid == CHAT_MSG)
+            {
+                std::cout << "\n[好友消息] from=" << j["id"].get<int>()
+                          << " msg: " << j["msg"].get<std::string>() << std::endl;
+            }
+            else if (msgid == CREATE_GROUP_ACK)
+            {
+                int err = j["errno"].get<int>();
+                if (err == 0) {
+                    std::cout << "✅ 创建群组成功，群ID=" << j["groupid"].get<int>() << std::endl;
+                } else {
+                    std::cout << "❌ 创建群组失败" << std::endl;
+                }
+            }
+            else if (msgid == JOIN_GROUP_ACK)
+            {
+                int err = j["errno"].get<int>();
+                if (err == 0) {
+                    std::cout << "✅ 加入群组成功" << std::endl;
+                } else {
+                    std::cout << "❌ 加入群组失败" << std::endl;
+                }
+            }
+            else if (msgid == GROUP_CHAT_MSG)
+            {
+                std::cout << "\n[群消息] groupid=" << j["groupid"].get<int>()
+                          << " from=" << j["id"].get<int>()
+                          << " msg: " << j["msg"].get<std::string>() << std::endl;
+            }
             else if (msgid == ERROR_MSG)
             {
-                // [DAY5 新增] 兼容 error / errmsg 两种字段名
                 if (j.contains("error"))
                 {
                     std::cout << "[Server Error] " << j["error"].get<std::string>() << std::endl;
@@ -511,9 +546,6 @@ private:
         {
             std::cerr << "JSON parse error: " << e.what() << std::endl;
         }
-
-        // [DAY5 修改] 这里不再像原来那样打印 >>> 提示符
-        // 因为现在已经不是“自由输入模式”，而是菜单模式
     }
 
     // [DAY5 新增] 处理注册响应
@@ -568,9 +600,14 @@ private:
     void showChatMenu()
     {
         std::cout << "\n[已登录 id=" << currentUserId_.load() << "]\n";
-        std::cout << "  ping    - 心跳测试\n";
-        std::cout << "  logout  - 登出\n";
-        std::cout << "  quit    - 退出程序\n";
+        std::cout << "  chat <friendid> <msg>  - 发送消息给好友\n";
+        std::cout << "  addfriend <friendid>   - 添加好友\n";
+        std::cout << "  creategroup <name>     - 创建群组\n";
+        std::cout << "  joingroup <groupid>    - 加入群组\n";
+        std::cout << "  groupchat <groupid> <msg> - 发送群消息\n";
+        std::cout << "  ping                   - 心跳测试\n";
+        std::cout << "  logout                 - 登出\n";
+        std::cout << "  quit                   - 退出程序\n";
         std::cout << ">>> ";
     }
 
@@ -600,7 +637,77 @@ private:
     // [DAY5 新增] 处理登录后菜单
     void handleChatMenu(const std::string &cmd)
     {
-        if (cmd == "ping")
+        if (cmd.substr(0, 4) == "chat") {
+            std::istringstream iss(cmd);
+            std::string c, msg;
+            int friendid;
+            iss >> c >> friendid;
+            std::getline(iss, msg);
+            if (msg.empty()) {
+                std::cout << "用法: chat <friendid> <msg>" << std::endl;
+                return;
+            }
+            json j;
+            j["msgid"] = CHAT_MSG;
+            j["id"] = currentUserId_.load();
+            j["to"] = friendid;
+            j["msg"] = msg.substr(1);
+            send(j.dump());
+        }
+        else if (cmd.substr(0, 9) == "addfriend") {
+            std::istringstream iss(cmd);
+            std::string c;
+            int friendid;
+            iss >> c >> friendid;
+            json j;
+            j["msgid"] = ADD_FRIEND_MSG;
+            j["id"] = currentUserId_.load();
+            j["friendid"] = friendid;
+            send(j.dump());
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        else if (cmd.substr(0, 11) == "creategroup") {
+            std::istringstream iss(cmd);
+            std::string c, name;
+            iss >> c >> name;
+            json j;
+            j["msgid"] = CREATE_GROUP_MSG;
+            j["id"] = currentUserId_.load();
+            j["groupname"] = name;
+            j["groupdesc"] = "";
+            send(j.dump());
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        else if (cmd.substr(0, 9) == "joingroup") {
+            std::istringstream iss(cmd);
+            std::string c;
+            int groupid;
+            iss >> c >> groupid;
+            json j;
+            j["msgid"] = JOIN_GROUP_MSG;
+            j["id"] = currentUserId_.load();
+            j["groupid"] = groupid;
+            send(j.dump());
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        else if (cmd.substr(0, 9) == "groupchat") {
+            std::istringstream iss(cmd);
+            std::string c, msg;
+            int groupid;
+            iss >> c >> groupid;
+            std::getline(iss, msg);
+            if (msg.empty()) {
+                std::cout << "用法: groupchat <groupid> <msg>" << std::endl;
+                return;
+            }
+            json j;
+            j["msgid"] = GROUP_CHAT_MSG;
+            j["id"] = currentUserId_.load();
+            j["groupid"] = groupid;
+            j["msg"] = msg.substr(1);
+            send(j.dump());
+        }
+        else if (cmd == "ping")
         {
             json j;
             j["msgid"] = PING_MSG;
@@ -614,9 +721,6 @@ private:
             j["id"] = currentUserId_.load();
             send(j.dump());
 
-            // [DAY5 简化处理]
-            // 这里先本地清空登录状态，不等待服务端 ACK
-            // 后面如果你实现了 LOGOUT_MSG_ACK，再升级成“等 ACK 再清空”
             loggedIn_ = false;
             currentUserId_ = -1;
 
@@ -631,7 +735,6 @@ private:
                 j["id"] = currentUserId_.load();
                 send(j.dump());
 
-                // [DAY5 新增] 稍等一下，尽量让 logout 发出去
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 

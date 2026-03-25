@@ -31,6 +31,9 @@ add_executable(chatserver
     src/server/chatservice.cpp
     src/db/db.cpp
     src/model/usermodel.cpp
+    src/model/friendmodel.cpp
+    src/model/groupmodel.cpp
+    src/model/offlinemsgmodel.cpp
     src/common/crypto.cpp
 )
 target_link_libraries(chatserver ${MUDUO_LIBS} mysqlclient crypto)
