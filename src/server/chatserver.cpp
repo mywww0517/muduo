@@ -1,6 +1,7 @@
 #include <muduo/net/TcpServer.h>
 #include <muduo/net/EventLoop.h>
 #include <muduo/base/Logging.h>
+#include <cstdlib>
 
 #include "codec.hpp"
 #include "chatservice.hpp"
@@ -135,7 +136,7 @@ private:
     TcpServer server_;
 };
 
-int main(){
+int main(int argc, char* argv[]) {
     // 初始化业务层（连接数据库等）
     if (!ChatService::instance().init()) {
         LOG_FATAL << "ChatService init failed";
@@ -145,13 +146,24 @@ int main(){
     // 重置所有用户状态
     ChatService::instance().reset();
 
+    // 从命令行参数或环境变量读取端口
+    int port = 8888;
+    if (argc > 1) {
+        port = std::atoi(argv[1]);
+    } else {
+        const char* env_port = std::getenv("CHAT_SERVER_PORT");
+        if (env_port) {
+            port = std::atoi(env_port);
+        }
+    }
+
     EventLoop loop;
-    InetAddress addr(8888);
+    InetAddress addr(port);
 
     ChatServer server(&loop, addr, "ChatServer");
     server.start();
 
-    LOG_INFO << "ChatServer running on port 8888";
+    LOG_INFO << "ChatServer running on port " << port;
 
     loop.loop();
 

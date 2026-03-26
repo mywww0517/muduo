@@ -1,6 +1,7 @@
 #include "redis.hpp"
 #include <muduo/base/Logging.h>
 #include <thread>
+#include <cstdlib>
 
 Redis::Redis() : publishContext_(nullptr), subscribeContext_(nullptr) {}
 
@@ -14,7 +15,13 @@ Redis::~Redis() {
 }
 
 bool Redis::connect() {
-    publishContext_ = redisConnect("127.0.0.1", 6379);
+    const char* host = std::getenv("REDIS_HOST");
+    if (!host) host = "127.0.0.1";
+
+    const char* port_str = std::getenv("REDIS_PORT");
+    int port = port_str ? std::atoi(port_str) : 6379;
+
+    publishContext_ = redisConnect(host, port);
     if (publishContext_ == nullptr || publishContext_->err) {
         if (publishContext_) {
             LOG_ERROR << "Redis publish connect error: " << publishContext_->errstr;
@@ -24,7 +31,7 @@ bool Redis::connect() {
         return false;
     }
 
-    subscribeContext_ = redisConnect("127.0.0.1", 6379);
+    subscribeContext_ = redisConnect(host, port);
     if (subscribeContext_ == nullptr || subscribeContext_->err) {
         if (subscribeContext_) {
             LOG_ERROR << "Redis subscribe connect error: " << subscribeContext_->errstr;
