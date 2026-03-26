@@ -41,6 +41,13 @@ bool ChatService::init() {
         LOG_ERROR << "ChatService init failed: offlineMsgModel init error";
         return false;
     }
+    if (!redis_.connect()) {
+        LOG_ERROR << "ChatService init failed: redis connect error";
+        return false;
+    }
+
+    redis_.observer_channel_message(std::bind(&ChatService::handleRedisSubscribeMessage, this, std::placeholders::_1, std::placeholders::_2));
+
     return true;
 }
 
@@ -136,6 +143,9 @@ void ChatService::login(const TcpConnectionPtr& conn, json& js, Timestamp) {
     response["id"]    = user.id();
     response["name"]  = user.name();
 
+    // 订阅 Redis 频道
+    redis_.subscribe(id);
+
     // 查询好友列表
     std::vector<User> friends = friendModel_.query(id);
     if (!friends.empty()) {
@@ -202,6 +212,8 @@ void ChatService::logout(const TcpConnectionPtr& conn, json& js, Timestamp) {
         return;
     }
 
+    redis_.unsubscribe(userid);
+
     User user(userid);
     user.setState("offline");
     userModel_.updateState(user);
@@ -224,6 +236,7 @@ void ChatService::clientCloseException(const TcpConnectionPtr& conn) {
     }
 
     if (user.id() != -1) {
+        redis_.unsubscribe(user.id());
         user.setState("offline");
         userModel_.updateState(user);
         LOG_INFO << "client close exception: id=" << user.id();
@@ -232,6 +245,14 @@ void ChatService::clientCloseException(const TcpConnectionPtr& conn) {
 
 void ChatService::reset() {
     userModel_.resetState();
+}
+
+void ChatService::handleRedisSubscribeMessage(int userid, const std::string& msg) {
+    std::lock_guard<std::mutex> lock(connMutex_);
+    auto it = userConnMap_.find(userid);
+    if (it != userConnMap_.end()) {
+        codecSend(it->second, msg);
+    }
 }
 
 void ChatService::addFriend(const TcpConnectionPtr& conn, json& js, Timestamp) {
@@ -264,7 +285,12 @@ void ChatService::oneChat(const TcpConnectionPtr& conn, json& js, Timestamp) {
         }
     }
 
-    offlineMsgModel_.insert(toid, js.dump());
+    User user = userModel_.query(toid);
+    if (user.id() != -1 && user.state() == "online") {
+        redis_.publish(toid, js.dump());
+    } else {
+        offlineMsgModel_.insert(toid, js.dump());
+    }
 }
 
 void ChatService::createGroup(const TcpConnectionPtr& conn, json& js, Timestamp) {
@@ -324,7 +350,12 @@ void ChatService::groupChat(const TcpConnectionPtr& conn, json& js, Timestamp) {
         if (it != userConnMap_.end()) {
             codecSend(it->second, js.dump());
         } else {
-            offlineMsgModel_.insert(id, js.dump());
+            User user = userModel_.query(id);
+            if (user.id() != -1 && user.state() == "online") {
+                redis_.publish(id, js.dump());
+            } else {
+                offlineMsgModel_.insert(id, js.dump());
+            }
         }
     }
 }

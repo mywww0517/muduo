@@ -1,6 +1,6 @@
-# MyMuduo Chat v0.4
+# MyMuduo Chat v0.5
 
-一个基于 **C++11 / muduo / MySQL** 的轻量级聊天服务器学习项目。
+一个基于 **C++11 / muduo / MySQL / Redis** 的轻量级聊天服务器学习项目。
 项目重点练习以下内容：
 
 - Linux 下的网络编程与 Reactor 模型
@@ -13,24 +13,30 @@
 - 好友系统与一对一聊天
 - 群组聊天
 - 离线消息存储与推送
+- 集群部署与跨服务器通信（Redis pub/sub）
 
-> 当前版本 **v0.4** 的重点是实现”完整聊天功能”：
+> 当前版本 **v0.5** 的重点是实现”集群通信”：
 >
-> **好友管理 + 一对一聊天 + 群组聊天 + 离线消息**
+> **Redis pub/sub 实现跨服务器消息转发**
 
 ---
 
 ## 项目简介
 
-`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个功能完整的聊天服务端。
+`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个支持集群部署的聊天服务端。
 
-相比 v0.3，v0.4 主要新增了：
+相比 v0.4，v0.5 主要新增了：
 
-- **好友系统**：添加好友、查询好友列表、好友在线状态显示
-- **一对一聊天**：发送消息给在线好友（实时转发）或离线好友（存储离线消息）
-- **群组功能**：创建群组、加入群组、群消息广播
-- **离线消息**：登录时自动拉取离线消息并清空
-- **数据模型扩展**：FriendModel、GroupModel、OfflineMsgModel
+- **Redis 集成**：使用 Redis pub/sub 实现跨服务器通信
+- **集群支持**：多个 chatserver 实例可以互相转发消息
+- **用户频道订阅**：用户登录时自动订阅个人频道，登出时取消订阅
+- **跨服务器消息转发**：一对一聊天和群聊消息支持跨服务器转发
+
+v0.4 已完成的功能：
+- 好友系统（添加好友、查询好友列表、在线状态显示）
+- 一对一聊天（在线实时转发、离线存储）
+- 群组功能（创建群、加入群、群消息广播）
+- 离线消息（存储、登录时拉取）
 
 v0.3 已完成的功能：
 - 密码安全存储（SHA256 哈希）
@@ -101,12 +107,12 @@ v0.2 已完成的功能：
 
 ## 当前版本说明
 
-- v0.4 当前重点是实现 **完整聊天功能**
-- **好友系统**：添加好友、登录时返回好友列表及在线状态
-- **一对一聊天**：在线用户实时转发，离线用户存储到 offlinemessage 表
-- **群组功能**：创建群、加入群、群消息广播给所有成员（在线转发/离线存储）
-- **离线消息**：登录时自动拉取并清空离线消息
-- **数据模型**：FriendModel、GroupModel、OfflineMsgModel
+- v0.5 当前重点是实现 **集群通信**
+- **Redis pub/sub**：使用 Redis 发布订阅模式实现跨服务器通信
+- **用户频道订阅**：用户登录时订阅个人频道（channel = userid），登出时取消订阅
+- **跨服务器转发**：消息优先本地转发，本地不在线则通过 Redis 发布到目标用户频道
+- **集群支持**：多个 chatserver 实例可以同时运行，用户可以连接到任意实例
+- **消息路由优化**：本地在线 → 直接转发；跨服务器在线 → Redis 转发；离线 → 存储数据库
 - **已知限制**：SQL 使用字符串拼接（存在注入风险），SHA256 未加盐，后续版本可改进
 
 ---
@@ -120,6 +126,7 @@ v0.2 已完成的功能：
 - CMake 3.10+
 - muduo 网络库
 - MySQL 5.7+ / 8.0+
+- Redis 5.0+
 
 ---
 
@@ -127,11 +134,12 @@ v0.2 已完成的功能：
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y g++ cmake make libboost-all-dev default-libmysqlclient-dev libssl-dev
+sudo apt-get install -y g++ cmake make libboost-all-dev default-libmysqlclient-dev libssl-dev libhiredis-dev redis-server
 ```
 
 > `nlohmann/json` 以单头文件形式放在 `thirdparty/json.hpp` 中，无需额外安装。
 > `libssl-dev` 用于 SHA256 密码哈希。
+> `libhiredis-dev` 用于 Redis 客户端。
 
 ---
 
@@ -903,6 +911,8 @@ CREATE DATABASE chat;
 - [x] 一对一聊天（在线转发 / 离线存储）
 - [x] 群组功能（创建群、加入群、群聊）
 - [x] 离线消息（存储、登录时拉取）
+- [x] Redis 集成（pub/sub）
+- [x] 集群通信（跨服务器消息转发）
 
 ### 计划中
 
@@ -911,7 +921,8 @@ CREATE DATABASE chat;
 - [ ] SQL 预编译语句（防注入）
 - [ ] 密码加盐哈希
 - [ ] 配置文件化与脚本完善
-- [ ] 集群部署（负载均衡、Redis 共享状态）
+- [ ] 负载均衡（Nginx / LVS）
+- [ ] 服务注册与发现
 
 ---
 
@@ -923,6 +934,7 @@ CREATE DATABASE chat;
 | v0.2 | 用户系统：MySQL + 注册 / 登录 / 登出 + ChatService 分层 + 菜单客户端 |
 | v0.3 | 认证安全：SHA256 密码哈希 + 在线状态管理 + 重复登录检测 + 断线清理 |
 | v0.4 | 聊天功能：好友系统 + 一对一聊天 + 群组聊天 + 离线消息 |
+| v0.5 | 集群通信：Redis pub/sub + 跨服务器消息转发 |
 
 ---
 

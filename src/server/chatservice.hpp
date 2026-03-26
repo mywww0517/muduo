@@ -12,6 +12,7 @@
 #include "friendmodel.hpp"
 #include "groupmodel.hpp"
 #include "offlinemsgmodel.hpp"
+#include "redis.hpp"
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -38,6 +39,8 @@ public:
     void clientCloseException(const muduo::net::TcpConnectionPtr& conn);
     void reset();
 
+    void handleRedisSubscribeMessage(int userid, const std::string& msg);
+
 private:
     ChatService();
 
@@ -49,4 +52,5 @@ private:
     FriendModel friendModel_;
     GroupModel groupModel_;
     OfflineMsgModel offlineMsgModel_;
+    Redis redis_;
 };
