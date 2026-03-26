@@ -1,6 +1,6 @@
-# MyMuduo Chat v0.5
+# MyMuduo Chat v0.6
 
-一个基于 **C++11 / muduo / MySQL / Redis** 的轻量级聊天服务器学习项目。
+一个基于 **C++11 / muduo / MySQL / Redis / Nginx** 的轻量级聊天服务器学习项目。
 项目重点练习以下内容：
 
 - Linux 下的网络编程与 Reactor 模型
@@ -14,23 +14,29 @@
 - 群组聊天
 - 离线消息存储与推送
 - 集群部署与跨服务器通信（Redis pub/sub）
+- 负载均衡（Nginx TCP stream）
 
-> 当前版本 **v0.5** 的重点是实现”集群通信”：
+> 当前版本 **v0.6** 的重点是实现”负载均衡”：
 >
-> **Redis pub/sub 实现跨服务器消息转发**
+> **Nginx TCP stream 实现负载均衡 + 多实例 ChatServer**
 
 ---
 
 ## 项目简介
 
-`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个支持集群部署的聊天服务端。
+`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个支持集群部署和负载均衡的聊天服务端。
 
-相比 v0.4，v0.5 主要新增了：
+相比 v0.5，v0.6 主要新增了：
 
-- **Redis 集成**：使用 Redis pub/sub 实现跨服务器通信
-- **集群支持**：多个 chatserver 实例可以互相转发消息
-- **用户频道订阅**：用户登录时自动订阅个人频道，登出时取消订阅
-- **跨服务器消息转发**：一对一聊天和群聊消息支持跨服务器转发
+- **Nginx 负载均衡**：使用 Nginx stream 模块实现 TCP 负载均衡
+- **统一入口**：客户端连接到 Nginx（端口 9000），由 Nginx 转发到后端服务器
+- **多实例支持**：支持多个 ChatServer 实例（8888、8889...）
+- **集群脚本**：提供启动/停止集群的便捷脚本
+
+v0.5 已完成的功能：
+- Redis 集成（pub/sub 实现跨服务器通信）
+- 用户频道订阅（登录时订阅，登出时取消订阅）
+- 跨服务器消息转发（一对一、群聊）
 
 v0.4 已完成的功能：
 - 好友系统（添加好友、查询好友列表、在线状态显示）
@@ -107,12 +113,12 @@ v0.2 已完成的功能：
 
 ## 当前版本说明
 
-- v0.5 当前重点是实现 **集群通信**
-- **Redis pub/sub**：使用 Redis 发布订阅模式实现跨服务器通信
-- **用户频道订阅**：用户登录时订阅个人频道（channel = userid），登出时取消订阅
-- **跨服务器转发**：消息优先本地转发，本地不在线则通过 Redis 发布到目标用户频道
-- **集群支持**：多个 chatserver 实例可以同时运行，用户可以连接到任意实例
-- **消息路由优化**：本地在线 → 直接转发；跨服务器在线 → Redis 转发；离线 → 存储数据库
+- v0.6 当前重点是实现 **负载均衡**
+- **Nginx TCP 负载均衡**：使用 Nginx stream 模块实现 TCP 层负载均衡
+- **统一入口**：客户端连接到 Nginx（端口 9000），由 Nginx 转发到后端 ChatServer
+- **轮询策略**：默认使用轮询（round-robin）分发连接到多个后端服务器
+- **健康检查**：支持 max_fails 和 fail_timeout 参数，自动剔除故障节点
+- **集群脚本**：提供 start_cluster.sh 和 stop_cluster.sh 便捷管理集群
 - **已知限制**：SQL 使用字符串拼接（存在注入风险），SHA256 未加盐，后续版本可改进
 
 ---
@@ -127,6 +133,7 @@ v0.2 已完成的功能：
 - muduo 网络库
 - MySQL 5.7+ / 8.0+
 - Redis 5.0+
+- Nginx 1.9+（支持 stream 模块）
 
 ---
 
@@ -134,12 +141,13 @@ v0.2 已完成的功能：
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y g++ cmake make libboost-all-dev default-libmysqlclient-dev libssl-dev libhiredis-dev redis-server
+sudo apt-get install -y g++ cmake make libboost-all-dev default-libmysqlclient-dev libssl-dev libhiredis-dev redis-server nginx
 ```
 
 > `nlohmann/json` 以单头文件形式放在 `thirdparty/json.hpp` 中，无需额外安装。
 > `libssl-dev` 用于 SHA256 密码哈希。
 > `libhiredis-dev` 用于 Redis 客户端。
+> `nginx` 用于 TCP 负载均衡（需要 stream 模块）。
 
 ---
 
@@ -208,7 +216,38 @@ CREATE TABLE IF NOT EXISTS offlinemessage (
 );
 ```
 
-#### 4.3 准备 MySQL 账号
+#### 4.4 配置 Nginx（可选，用于负载均衡）
+
+如果需要使用 Nginx 负载均衡，需要配置 stream 模块：
+
+```bash
+# 编辑 /etc/nginx/nginx.conf，在文件末尾添加：
+sudo tee -a /etc/nginx/nginx.conf > /dev/null << 'EOF'
+
+stream {
+    upstream chatserver_backend {
+        server 127.0.0.1:8888;
+        server 127.0.0.1:8889;
+    }
+    server {
+        listen 9000;
+        proxy_pass chatserver_backend;
+    }
+}
+EOF
+
+# 测试配置
+sudo nginx -t
+
+# 重载 Nginx
+sudo systemctl reload nginx
+```
+
+配置说明：
+- `upstream chatserver_backend`：定义后端服务器组
+- `listen 9000`：Nginx 监听端口 9000
+- `proxy_pass chatserver_backend`：转发到后端服务器组
+- 默认使用轮询（round-robin）负载均衡策略
 
 你可以直接使用已有账号，也可以新建一个本地开发用账号，例如：
 
@@ -273,11 +312,44 @@ cmake --build build -j$(nproc)
 
 ### 7. 运行项目
 
-#### 方式一：使用脚本启动（推荐）
+#### 方式一：使用集群脚本启动（推荐）
 
 ```bash
-./scripts/run_server.sh
-./scripts/run_client.sh
+# 启动集群（2 个 ChatServer + Nginx 负载均衡）
+./scripts/start_cluster.sh
+
+# 停止集群
+./scripts/stop_cluster.sh
+```
+
+集群架构：
+- ChatServer 1: 127.0.0.1:8888
+- ChatServer 2: 127.0.0.1:8889
+- Nginx Load Balancer: 127.0.0.1:9000（统一入口）
+- Redis: 127.0.0.1:6379（跨服务器通信）
+- MySQL: 127.0.0.1:3306（数据持久化）
+
+#### 方式二：手动启动单机模式
+
+```bash
+# 加载环境变量
+source config/db.env
+
+# 启动服务器（默认端口 8888）
+./build/bin/chatserver
+
+# 或指定端口
+./build/bin/chatserver 8889
+```
+
+#### 启动客户端
+
+```bash
+# 连接到 Nginx 负载均衡器（推荐）
+./build/bin/chatclient 127.0.0.1 9000
+
+# 或连接到单机服务器
+./build/bin/chatclient 127.0.0.1 8888
 ```
 
 建议在 `run_server.sh` 中自动加载数据库环境变量，例如：
@@ -913,6 +985,8 @@ CREATE DATABASE chat;
 - [x] 离线消息（存储、登录时拉取）
 - [x] Redis 集成（pub/sub）
 - [x] 集群通信（跨服务器消息转发）
+- [x] Nginx 负载均衡（TCP stream）
+- [x] 集群管理脚本
 
 ### 计划中
 
@@ -921,8 +995,8 @@ CREATE DATABASE chat;
 - [ ] SQL 预编译语句（防注入）
 - [ ] 密码加盐哈希
 - [ ] 配置文件化与脚本完善
-- [ ] 负载均衡（Nginx / LVS）
-- [ ] 服务注册与发现
+- [ ] 服务注册与发现（etcd / Consul）
+- [ ] 监控与日志系统
 
 ---
 
@@ -935,6 +1009,7 @@ CREATE DATABASE chat;
 | v0.3 | 认证安全：SHA256 密码哈希 + 在线状态管理 + 重复登录检测 + 断线清理 |
 | v0.4 | 聊天功能：好友系统 + 一对一聊天 + 群组聊天 + 离线消息 |
 | v0.5 | 集群通信：Redis pub/sub + 跨服务器消息转发 |
+| v0.6 | 负载均衡：Nginx TCP stream + 多实例 ChatServer + 集群脚本 |
 
 ---
 
