@@ -820,7 +820,7 @@ private:
     std::atomic<int> currentUserId_;
 };
 
-int main()
+int main(int argc, char* argv[])
 {
     // 关键设计：两个线程
     //
@@ -839,7 +839,11 @@ int main()
     EventLoopThread loopThread;
     EventLoop *loop = loopThread.startLoop();   // 在新线程启动 EventLoop
 
-    InetAddress serverAddr("127.0.0.1", 8888);
+    const char* host = "127.0.0.1";
+    int port = 8888;
+    if (argc > 1) host = argv[1];
+    if (argc > 2) port = std::atoi(argv[2]);
+    InetAddress serverAddr(host, port);
     ChatClient client(loop, serverAddr);
     client.connect();
 
