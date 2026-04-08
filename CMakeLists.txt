@@ -75,9 +75,11 @@ add_executable(test_model
     src/db/test_model.cpp
     src/db/db.cpp
     src/model/usermodel.cpp
+    src/common/crypto.cpp
 )
 target_link_libraries(test_model
     muduo_base
     mysqlclient
+    crypto
     pthread
 )
