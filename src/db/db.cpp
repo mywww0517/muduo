@@ -75,7 +75,9 @@ bool MySQL::update(const std::string& sql) {
                   << " error: " << mysql_error(conn_);
         return false;
     }
-    return true;
+    // 检查是否真的更新了行
+    my_ulonglong affected_rows = mysql_affected_rows(conn_);
+    return affected_rows > 0;
 }
 
 MYSQL_RES* MySQL::query(const std::string& sql) {

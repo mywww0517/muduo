@@ -89,3 +89,141 @@ std::vector<int> GroupModel::queryGroupUsers(int groupid) {
     }
     return users;
 }
+
+// v1.0 群组管理增强功能实现
+
+bool GroupModel::leaveGroup(int userid, int groupid) {
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "DELETE FROM groupuser WHERE groupid = %d AND userid = %d",
+        groupid, userid);
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
+    return mysql_.update(sql);
+}
+
+bool GroupModel::kickMember(int groupid, int operatorid, int targetid) {
+    // 验证操作者是否为群主
+    std::string role = getUserRole(groupid, operatorid);
+    if (role != "creator") {
+        return false;
+    }
+
+    // 不能踢出群主自己
+    if (operatorid == targetid) {
+        return false;
+    }
+
+    // 删除目标用户
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "DELETE FROM groupuser WHERE groupid = %d AND userid = %d",
+        groupid, targetid);
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
+    return mysql_.update(sql);
+}
+
+bool GroupModel::transferGroup(int groupid, int oldcreator, int newcreator) {
+    // 验证旧群主身份
+    std::string oldRole = getUserRole(groupid, oldcreator);
+    if (oldRole != "creator") {
+        return false;
+    }
+
+    // 验证新群主是否为群成员
+    std::string newRole = getUserRole(groupid, newcreator);
+    if (newRole.empty()) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
+
+    // 将旧群主改为普通成员
+    char sql1[256];
+    snprintf(sql1, sizeof(sql1),
+        "UPDATE groupuser SET grouprole = 'normal' WHERE groupid = %d AND userid = %d",
+        groupid, oldcreator);
+    if (!mysql_.update(sql1)) {
+        return false;
+    }
+
+    // 将新群主设置为 creator
+    char sql2[256];
+    snprintf(sql2, sizeof(sql2),
+        "UPDATE groupuser SET grouprole = 'creator' WHERE groupid = %d AND userid = %d",
+        groupid, newcreator);
+    return mysql_.update(sql2);
+}
+
+bool GroupModel::setAnnouncement(int groupid, const std::string& announcement) {
+    char sql[1024];
+    snprintf(sql, sizeof(sql),
+        "UPDATE allgroup SET announcement = '%s' WHERE id = %d",
+        announcement.c_str(), groupid);
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
+    return mysql_.update(sql);
+}
+
+std::string GroupModel::getAnnouncement(int groupid) {
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "SELECT announcement FROM allgroup WHERE id = %d", groupid);
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
+    MYSQL_RES* res = mysql_.query(sql);
+    if (res) {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row && row[0]) {
+            std::string announcement = row[0];
+            mysql_free_result(res);
+            return announcement;
+        }
+        mysql_free_result(res);
+    }
+    return "";
+}
+
+std::string GroupModel::getUserRole(int groupid, int userid) {
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "SELECT grouprole FROM groupuser WHERE groupid = %d AND userid = %d",
+        groupid, userid);
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
+    MYSQL_RES* res = mysql_.query(sql);
+    if (res) {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row && row[0]) {
+            std::string role = row[0];
+            mysql_free_result(res);
+            return role;
+        }
+        mysql_free_result(res);
+    }
+    return "";
+}
+
+std::vector<GroupUser> GroupModel::queryGroupUsersWithDetail(int groupid) {
+    char sql[512];
+    snprintf(sql, sizeof(sql),
+        "SELECT userid, grouprole FROM groupuser WHERE groupid = %d",
+        groupid);
+
+    std::vector<GroupUser> users;
+    std::lock_guard<std::mutex> lock(dbMutex_);
+    MYSQL_RES* res = mysql_.query(sql);
+    if (res) {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(res))) {
+            GroupUser gu;
+            gu.setGroupId(groupid);
+            gu.setUserId(std::atoi(row[0]));
+            gu.setRole(row[1] ? row[1] : "normal");
+            users.push_back(gu);
+        }
+        mysql_free_result(res);
+    }
+    return users;
+}

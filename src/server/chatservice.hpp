@@ -12,6 +12,7 @@
 #include "friendmodel.hpp"
 #include "groupmodel.hpp"
 #include "offlinemsgmodel.hpp"
+#include "messagemodel.hpp"
 #include "redis.hpp"
 #include "json.hpp"
 
@@ -36,6 +37,24 @@ public:
     void joinGroup(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
     void groupChat(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
 
+    // v1.0 好友管理增强
+    void deleteFriend(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void setFriendRemark(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void blockFriend(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void unblockFriend(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+
+    // v1.0 群组管理增强
+    void leaveGroup(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void kickGroupMember(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void transferGroup(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void setGroupAnnouncement(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void getGroupMembers(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+
+    // v1.0 消息功能增强
+    void recallMessage(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void queryHistory(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+    void messageReadAck(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
+
     void clientCloseException(const muduo::net::TcpConnectionPtr& conn);
     void reset();
 
@@ -43,6 +62,8 @@ public:
 
 private:
     ChatService();
+
+    void broadcastGroupNotification(int groupid, const std::string& notification);
 
     std::unordered_map<int, MsgHandler> msgHandlerMap_;
     std::unordered_map<int, muduo::net::TcpConnectionPtr> userConnMap_;
@@ -52,5 +73,6 @@ private:
     FriendModel friendModel_;
     GroupModel groupModel_;
     OfflineMsgModel offlineMsgModel_;
+    MessageModel messageModel_;
     Redis redis_;
 };
