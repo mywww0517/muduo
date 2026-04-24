@@ -1,3 +1,4 @@
+# C++ 编译产物
 *.o
 *.log
 *.so
@@ -5,6 +6,66 @@
 *.out
 CMakeFiles/
 CMakeCache.txt
+cmake_install.cmake
+Makefile
 build/
+
+# IDE 配置
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 配置文件（包含敏感信息）
 config/db.env
+ai_service/.env
+
+# Python 相关
+ai_service/venv/
+ai_service/__pycache__/
+ai_service/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# 向量数据库和数据文件
+ai_service/chroma_db/
+ai_service/faiss_index/
+ai_service/vector_store/
+*.db
+*.sqlite
+
+# 日志文件
+*.log
+logs/
+/tmp/*.log
+ai_service/logs/
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Claude Code 整个目录
+.claude/
+
+# 文档（除了 README）
+docs/
+MILESTONE*.md
+CLAUDE.md
+
+# 数据库备份
+*.sql.bak
+backup/

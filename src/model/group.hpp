@@ -4,20 +4,23 @@
 class Group {
 public:
     Group(int id = -1, const std::string& name = "", const std::string& desc = "")
-        : id_(id), name_(name), desc_(desc) {}
+        : id_(id), name_(name), desc_(desc), announcement_("") {}
 
     void setId(int id) { id_ = id; }
     void setName(const std::string& name) { name_ = name; }
     void setDesc(const std::string& desc) { desc_ = desc; }
+    void setAnnouncement(const std::string& announcement) { announcement_ = announcement; }
 
     int id() const { return id_; }
     const std::string& name() const { return name_; }
     const std::string& desc() const { return desc_; }
+    const std::string& announcement() const { return announcement_; }
 
 private:
     int id_;
     std::string name_;
     std::string desc_;
+    std::string announcement_;
 };
 
 class GroupUser {

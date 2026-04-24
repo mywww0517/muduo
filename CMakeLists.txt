@@ -35,6 +35,7 @@ add_executable(chatserver
     src/model/friendmodel.cpp
     src/model/groupmodel.cpp
     src/model/offlinemsgmodel.cpp
+    src/model/messagemodel.cpp
     src/redis/redis.cpp
     src/common/crypto.cpp
 )
@@ -81,5 +82,16 @@ target_link_libraries(test_model
     muduo_base
     mysqlclient
     crypto
+    pthread
+)
+
+add_executable(test_message
+    src/db/test_message.cpp
+    src/db/db.cpp
+    src/model/messagemodel.cpp
+)
+target_link_libraries(test_message
+    muduo_base
+    mysqlclient
     pthread
 )
