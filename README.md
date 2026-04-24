@@ -1,4 +1,4 @@
-# MyMuduo Chat v0.7
+# MyMuduo Chat v1.0
 
 一个基于 **C++11 / muduo / MySQL / Redis / Nginx** 的轻量级聊天服务器学习项目。
 项目重点练习以下内容：
@@ -10,59 +10,66 @@
 - 用户注册 / 登录 / 登出与数据库持久化
 - 密码安全存储（SHA256 哈希）
 - 在线状态管理与重复登录检测
-- 好友系统与一对一聊天
-- 群组聊天
+- 好友系统（添加、删除、备注、拉黑）
+- 一对一聊天（实时转发、离线存储、消息撤回）
+- 群组管理（创建、加入、退出、转让、公告）
+- 消息功能（统一存储、撤回、历史查询、已读回执、@提及）
 - 离线消息存储与推送
 - 集群部署与跨服务器通信（Redis pub/sub）
 - 负载均衡（Nginx TCP stream）
 - 压力测试与故障演练
 
-> 当前版本 **v0.7** 的重点是”稳定性验证”：
+> 当前版本 **v1.0** 是第一个完整版本：
 >
-> **压力测试 + 故障演练 + 集群监控**
+> **完整的好友管理 + 群组管理 + 消息功能增强**
 
 ---
 
 ## 项目简介
 
-`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个支持集群部署、负载均衡和稳定性验证的聊天服务端。
+`MyMuduo Chat` 从 v0.1 的基础 echo / ping-pong + codec 出发，逐步演进为一个功能完整的聊天服务端。
 
-相比 v0.6，v0.7 主要新增了：
+相比 v0.7，v1.0 主要新增了：
 
-- **压力测试脚本**：模拟并发客户端，测试集群负载能力
-- **故障演练脚本**：模拟服务器故障，验证集群容错能力
-- **集群监控脚本**：实时监控集群状态（进程、连接数、内存）
-- **稳定性验证**：单个服务器故障时，集群仍可正常服务
+- **好友管理增强**：删除好友、设置备注、拉黑/取消拉黑、查询好友详情
+- **群组管理增强**：退出群组、移除成员、转让群主、群公告、成员列表
+- **消息功能增强**：统一存储、消息撤回、历史查询、已读回执、@提及
+- **数据库优化**：新增 message 表和 message_read_status 表，扩展 friend 和 allgroup 表
+
+v0.7 已完成的功能：
+- 压力测试脚本（模拟并发客户端）
+- 故障演练脚本（验证集群容错）
+- 集群监控脚本（实时监控状态）
+- 稳定性验证（单点故障容错）
 
 v0.6 已完成的功能：
-- Nginx 负载均衡（stream 模块实现 TCP 负载均衡）
-- 统一入口（客户端连接到 Nginx，由 Nginx 转发到后端）
-- 集群脚本（启动/停止集群）
+- Nginx 负载均衡（TCP stream）
+- 统一入口（客户端 → Nginx → 后端）
+- 集群管理脚本
 
 v0.5 已完成的功能：
-- Redis 集成（pub/sub 实现跨服务器通信）
-- 用户频道订阅（登录时订阅，登出时取消订阅）
-- 跨服务器消息转发（一对一、群聊）
+- Redis pub/sub（跨服务器通信）
+- 用户频道订阅
+- 跨服务器消息转发
 
 v0.4 已完成的功能：
-- 好友系统（添加好友、查询好友列表、在线状态显示）
-- 一对一聊天（在线实时转发、离线存储）
-- 群组功能（创建群、加入群、群消息广播）
-- 离线消息（存储、登录时拉取）
+- 好友系统（添加、查询、在线状态）
+- 一对一聊天（实时转发、离线存储）
+- 群组功能（创建、加入、广播）
+- 离线消息（存储、拉取）
 
 v0.3 已完成的功能：
-- 密码安全存储（SHA256 哈希）
-- 在线状态管理（内存 + 数据库双层设计）
+- SHA256 密码哈希
+- 在线状态管理（内存 + 数据库）
 - 重复登录检测
 - 断线自动清理
 
 v0.2 已完成的功能：
-- 用户注册 / 登录 / 登出流程
-- 基于 MySQL 的用户数据持久化
-- ChatService 业务层，按 msgid 路由分发
+- 用户注册 / 登录 / 登出
+- MySQL 数据持久化
+- ChatService 业务层
 - UserModel 数据访问层
-- DB 数据库封装层
-- 客户端菜单式交互
+- 客户端菜单交互
 
 ---
 
@@ -91,10 +98,24 @@ v0.2 已完成的功能：
   - `LOGIN_MSG` - 登录（返回好友列表、群组列表、离线消息）
   - `LOGOUT_MSG` - 登出
   - `ADD_FRIEND_MSG` - 添加好友
+  - `DELETE_FRIEND_MSG` - 删除好友
+  - `SET_FRIEND_REMARK_MSG` - 设置好友备注
+  - `BLOCK_FRIEND_MSG` - 拉黑好友
+  - `UNBLOCK_FRIEND_MSG` - 取消拉黑
+  - `GET_FRIEND_INFO_MSG` - 查询好友详情
   - `CHAT_MSG` - 一对一聊天（在线转发/离线存储）
+  - `RECALL_MSG` - 消息撤回（2分钟限制）
+  - `GET_HISTORY_MSG` - 查询历史消息（分页）
+  - `MARK_READ_MSG` - 标记消息已读
   - `CREATE_GROUP_MSG` - 创建群组
   - `JOIN_GROUP_MSG` - 加入群组
-  - `GROUP_CHAT_MSG` - 群聊消息广播
+  - `LEAVE_GROUP_MSG` - 退出群组
+  - `REMOVE_GROUP_MEMBER_MSG` - 移除群成员（仅群主）
+  - `TRANSFER_GROUP_MSG` - 转让群主
+  - `SET_GROUP_ANNOUNCEMENT_MSG` - 设置群公告
+  - `GET_GROUP_ANNOUNCEMENT_MSG` - 查询群公告
+  - `GET_GROUP_MEMBERS_MSG` - 查询群成员列表
+  - `GROUP_CHAT_MSG` - 群聊消息广播（支持@提及）
 - 启动时初始化数据库连接
 - 数据库初始化失败时直接退出
 
@@ -107,10 +128,24 @@ v0.2 已完成的功能：
   - `quit`（退出）
 - 已登录状态支持：
   - `chat <friendid> <msg>` - 发送消息给好友
+  - `recall <msgid>` - 撤回消息（2分钟内）
+  - `history <friendid> [page]` - 查询历史消息
+  - `markread <msgid>` - 标记消息已读
   - `addfriend <friendid>` - 添加好友
+  - `delfriend <friendid>` - 删除好友
+  - `remark <friendid> <remark>` - 设置好友备注
+  - `block <friendid>` - 拉黑好友
+  - `unblock <friendid>` - 取消拉黑
+  - `friendinfo <friendid>` - 查询好友详情
   - `creategroup <name>` - 创建群组
   - `joingroup <groupid>` - 加入群组
-  - `groupchat <groupid> <msg>` - 发送群消息
+  - `leavegroup <groupid>` - 退出群组
+  - `removemember <groupid> <userid>` - 移除群成员（仅群主）
+  - `transfergroup <groupid> <userid>` - 转让群主
+  - `setannouncement <groupid> <text>` - 设置群公告
+  - `getannouncement <groupid>` - 查询群公告
+  - `groupmembers <groupid>` - 查询群成员列表
+  - `groupchat <groupid> <msg>` - 发送群消息（支持@提及）
   - `ping` - 心跳测试
   - `logout` - 登出
   - `quit` - 退出程序
@@ -119,12 +154,12 @@ v0.2 已完成的功能：
 
 ## 当前版本说明
 
-- v0.7 当前重点是 **稳定性验证**
-- **压力测试**：使用脚本模拟并发客户端，测试集群负载能力
-- **故障演练**：模拟服务器故障，验证集群容错能力
-- **集群监控**：实时监控集群状态（进程、连接数、内存）
-- **健康检查**：Nginx 自动剔除故障节点，自动恢复
-- **测试结果**：单个服务器故障时，集群仍可正常服务
+- v1.0 是第一个完整版本，包含完整的好友管理、群组管理和消息功能
+- **好友管理**：支持添加、删除、备注、拉黑、查询详情
+- **群组管理**：支持创建、加入、退出、转让、公告、成员管理
+- **消息功能**：统一存储、撤回（2分钟限制）、历史查询、已读回执、@提及
+- **数据库优化**：新增 message 表统一存储所有消息，新增 message_read_status 表管理已读状态
+- **协议扩展**：新增消息类型 40-64，支持更丰富的功能
 - **已知限制**：SQL 使用字符串拼接（存在注入风险），SHA256 未加盐，后续版本可改进
 
 ---
@@ -190,18 +225,23 @@ CREATE TABLE IF NOT EXISTS user (
     state ENUM('online', 'offline') NOT NULL DEFAULT 'offline'
 );
 
--- 好友表
+-- 好友表（v1.0 扩展：添加备注、拉黑、创建时间）
 CREATE TABLE IF NOT EXISTS friend (
     userid INT NOT NULL,
     friendid INT NOT NULL,
+    remark VARCHAR(50) DEFAULT '',
+    is_blocked TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(userid, friendid)
 );
 
--- 群组表
+-- 群组表（v1.0 扩展：添加公告、创建时间）
 CREATE TABLE IF NOT EXISTS allgroup (
     id INT PRIMARY KEY AUTO_INCREMENT,
     groupname VARCHAR(50) NOT NULL UNIQUE,
-    groupdesc VARCHAR(200) DEFAULT ''
+    groupdesc VARCHAR(200) DEFAULT '',
+    announcement TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 群成员表
@@ -212,13 +252,38 @@ CREATE TABLE IF NOT EXISTS groupuser (
     PRIMARY KEY(groupid, userid)
 );
 
--- 离线消息表
+-- 离线消息表（保留用于兼容性）
 CREATE TABLE IF NOT EXISTS offlinemessage (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     userid INT NOT NULL,
     message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX(userid)
+);
+
+-- 消息表（v1.0 新增：统一存储所有消息）
+CREATE TABLE IF NOT EXISTS message (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    from_id INT NOT NULL,
+    to_id INT NOT NULL,
+    msg_type ENUM('private', 'group') NOT NULL,
+    content TEXT NOT NULL,
+    is_recalled TINYINT(1) DEFAULT 0,
+    mentioned_users VARCHAR(500) DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX(from_id),
+    INDEX(to_id),
+    INDEX(created_at)
+);
+
+-- 消息已读状态表（v1.0 新增）
+CREATE TABLE IF NOT EXISTS message_read_status (
+    message_id BIGINT NOT NULL,
+    user_id INT NOT NULL,
+    is_read TINYINT(1) DEFAULT 0,
+    read_at TIMESTAMP NULL,
+    PRIMARY KEY(message_id, user_id),
+    FOREIGN KEY(message_id) REFERENCES message(id) ON DELETE CASCADE
 );
 ```
 
@@ -698,16 +763,35 @@ mymuduo/
 
 以下 `msgid` 数值仅作示意，实际以 `src/common/protocol.hpp` 为准。
 
-| 消息类型 | 说明 |
-|---|---|
-| `PING_MSG` | 心跳请求 |
-| `PONG_MSG` | 心跳响应 |
-| `REG_MSG` | 注册请求 |
-| `REG_MSG_ACK` | 注册响应 |
-| `LOGIN_MSG` | 登录请求 |
-| `LOGIN_MSG_ACK` | 登录响应 |
-| `LOGOUT_MSG` | 登出请求 |
-| `ERROR_MSG` | 错误响应 |
+| 消息类型 | msgid | 说明 |
+|---|---|---|
+| `PING_MSG` | 1 | 心跳请求 |
+| `PONG_MSG` | 2 | 心跳响应 |
+| `REG_MSG` | 3 | 注册请求 |
+| `REG_MSG_ACK` | 4 | 注册响应 |
+| `LOGIN_MSG` | 5 | 登录请求 |
+| `LOGIN_MSG_ACK` | 6 | 登录响应 |
+| `LOGOUT_MSG` | 7 | 登出请求 |
+| `ADD_FRIEND_MSG` | 8 | 添加好友 |
+| `CHAT_MSG` | 9 | 一对一聊天 |
+| `CREATE_GROUP_MSG` | 10 | 创建群组 |
+| `JOIN_GROUP_MSG` | 11 | 加入群组 |
+| `GROUP_CHAT_MSG` | 12 | 群聊消息 |
+| `DELETE_FRIEND_MSG` | 40 | 删除好友 |
+| `SET_FRIEND_REMARK_MSG` | 41 | 设置好友备注 |
+| `BLOCK_FRIEND_MSG` | 42 | 拉黑好友 |
+| `UNBLOCK_FRIEND_MSG` | 43 | 取消拉黑 |
+| `GET_FRIEND_INFO_MSG` | 44 | 查询好友详情 |
+| `LEAVE_GROUP_MSG` | 50 | 退出群组 |
+| `REMOVE_GROUP_MEMBER_MSG` | 51 | 移除群成员 |
+| `TRANSFER_GROUP_MSG` | 52 | 转让群主 |
+| `SET_GROUP_ANNOUNCEMENT_MSG` | 53 | 设置群公告 |
+| `GET_GROUP_ANNOUNCEMENT_MSG` | 54 | 查询群公告 |
+| `GET_GROUP_MEMBERS_MSG` | 55 | 查询群成员列表 |
+| `RECALL_MSG` | 60 | 消息撤回 |
+| `GET_HISTORY_MSG` | 61 | 查询历史消息 |
+| `MARK_READ_MSG` | 62 | 标记消息已读 |
+| `ERROR_MSG` | 999 | 错误响应 |
 
 ### JSON 示例
 
@@ -985,14 +1069,16 @@ CREATE DATABASE chat;
 - [x] 在线状态管理（内存 + 数据库）
 - [x] 重复登录检测
 - [x] 断线自动清理
-- [x] 好友系统（添加好友、好友列表）
-- [x] 一对一聊天（在线转发 / 离线存储）
-- [x] 群组功能（创建群、加入群、群聊）
+- [x] 好友系统（添加、删除、备注、拉黑、查询）
+- [x] 一对一聊天（在线转发 / 离线存储 / 消息撤回）
+- [x] 群组功能（创建、加入、退出、转让、公告、成员管理）
+- [x] 消息功能（统一存储、撤回、历史查询、已读回执、@提及）
 - [x] 离线消息（存储、登录时拉取）
 - [x] Redis 集成（pub/sub）
 - [x] 集群通信（跨服务器消息转发）
 - [x] Nginx 负载均衡（TCP stream）
 - [x] 集群管理脚本
+- [x] 压力测试与故障演练
 
 ### 计划中
 
@@ -1017,6 +1103,7 @@ CREATE DATABASE chat;
 | v0.5 | 集群通信：Redis pub/sub + 跨服务器消息转发 |
 | v0.6 | 负载均衡：Nginx TCP stream + 多实例 ChatServer + 集群脚本 |
 | v0.7 | 稳定性验证：压力测试 + 故障演练 + 集群监控 |
+| v1.0 | 功能完善：好友管理增强（删除/备注/拉黑）+ 群组管理增强（退出/转让/公告）+ 消息功能增强（撤回/历史/已读/@提及）+ 数据库优化（message表/已读状态表） |
 
 ---
 
