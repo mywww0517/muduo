@@ -12,8 +12,9 @@ class LLMClient:
         self.api_base = config.api_base
         self.model = config.model_name
         self.timeout = config.timeout
+        self.mock_mode = config.mock_mode
 
-        if not self.api_key:
+        if not self.api_key and not self.mock_mode:
             logger.warning(f"API key for {self.provider} is not set")
 
     def chat(self, message: str, context: List[Dict] = None) -> str:
@@ -31,6 +32,10 @@ class LLMClient:
             context = []
 
         try:
+            # 模拟模式：返回预设回复
+            if self.mock_mode:
+                return self._mock_response(message)
+
             if self.provider == 'deepseek':
                 return self._call_deepseek(message, context)
             elif self.provider == 'openai':
@@ -42,6 +47,31 @@ class LLMClient:
         except Exception as e:
             logger.error(f"LLM API 调用失败: {e}")
             return f"抱歉，我现在无法回复。错误: {str(e)}"
+
+    def _mock_response(self, message: str) -> str:
+        """模拟 AI 回复（用于测试）"""
+        logger.info(f"[MOCK MODE] 收到消息: {message}")
+
+        # 根据消息内容返回不同的模拟回复
+        message_lower = message.lower()
+
+        if "你好" in message or "hello" in message_lower or "hi" in message_lower:
+            return "你好！我是 AI 助手，很高兴为你服务。我现在运行在模拟模式下，可以回答你的问题。"
+
+        elif "介绍" in message or "你是谁" in message:
+            return "我是基于 MyMuduo Chat v2.0 集成的 AI 聊天机器人。我可以在群聊中回答问题、提供帮助。当前运行在模拟模式，用于测试系统架构。"
+
+        elif "天气" in message or "weather" in message_lower:
+            return "抱歉，我目前无法查询实时天气信息。但我可以回答其他问题！"
+
+        elif "帮助" in message or "help" in message_lower:
+            return "我可以帮你：\n1. 回答技术问题\n2. 提供建议和想法\n3. 进行简单对话\n\n在群聊中 @AI 就可以呼叫我！"
+
+        elif "测试" in message or "test" in message_lower:
+            return f"测试成功！我收到了你的消息：「{message[:50]}」\n系统运行正常，AI 集成工作正常。"
+
+        else:
+            return f"我理解你说的是：「{message[:100]}」\n\n这是一个模拟回复。在实际使用中，我会调用真实的 LLM API 来生成更智能的回复。"
 
     def _call_deepseek(self, message: str, context: List[Dict]) -> str:
         """调用 DeepSeek API"""

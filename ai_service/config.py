@@ -8,6 +8,9 @@ class Config:
         # LLM 提供商配置
         self.llm_provider = os.getenv('LLM_PROVIDER', 'deepseek')
 
+        # 模拟模式（用于测试）
+        self.mock_mode = os.getenv('MOCK_MODE', 'false').lower() == 'true'
+
         # DeepSeek 配置
         self.deepseek_api_key = os.getenv('DEEPSEEK_API_KEY', '')
         self.deepseek_api_base = os.getenv('DEEPSEEK_API_BASE', 'https://api.deepseek.com')
