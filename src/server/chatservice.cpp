@@ -2,6 +2,8 @@
 #include "crypto.hpp"
 #include <muduo/base/Logging.h>
 #include <functional>
+#include <thread>
+#include <curl/curl.h>
 
 using namespace std::placeholders;
 using muduo::Timestamp;
@@ -394,6 +396,10 @@ void ChatService::groupChat(const TcpConnectionPtr& conn, json& js, Timestamp) {
         mentioned_users = js["mentioned_users"].get<std::vector<int>>();
     }
 
+    // 检测是否 @AI (v2.0)
+    bool mentionAI = (msg.find("@AI") != std::string::npos ||
+                      std::find(mentioned_users.begin(), mentioned_users.end(), 999999) != mentioned_users.end());
+
     std::vector<int> users = groupModel_.queryGroupUsers(groupid);
 
     std::lock_guard<std::mutex> lock(connMutex_);
@@ -418,7 +424,14 @@ void ChatService::groupChat(const TcpConnectionPtr& conn, json& js, Timestamp) {
             }
         }
     }
+
+    // 如果 @AI，触发 AI 回复 (v2.0)
+    if (mentionAI) {
+        handleAIRequest(groupid, userid, msg);
+    }
 }
+
+// v1.0 好友管理增强功能实现
 
 // v1.0 好友管理增强功能实现
 
@@ -835,6 +848,127 @@ void ChatService::messageReadAck(const TcpConnectionPtr& conn, json& js, Timesta
         }
     } else {
         LOG_WARN << "message read ack failed: id=" << message_id << " user=" << userid;
+    }
+}
+
+// v2.0 AI 功能实现
+
+// curl 写回调函数
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+void ChatService::handleAIRequest(int groupid, int userid, const std::string& message) {
+    // 异步调用 AI 服务，避免阻塞主线程
+    std::thread([this, groupid, userid, message]() {
+        try {
+            LOG_INFO << "AI request from user " << userid << " in group " << groupid;
+
+            // 调用 AI 服务
+            std::string aiResponse = callAIService(message);
+
+            if (aiResponse.empty()) {
+                LOG_ERROR << "AI service returned empty response";
+                return;
+            }
+
+            LOG_INFO << "AI response: " << aiResponse.substr(0, 50) << "...";
+
+            // 存储 AI 回复到数据库
+            long long message_id = messageModel_.insertMessage(999999, groupid, "group", aiResponse);
+
+            // 构建 AI 回复消息
+            json aiMsg;
+            aiMsg["msgid"] = AI_CHAT_MSG;
+            aiMsg["id"] = 999999;
+            aiMsg["name"] = "AI";
+            aiMsg["groupid"] = groupid;
+            aiMsg["msg"] = aiResponse;
+            aiMsg["time"] = std::time(nullptr);
+            if (message_id > 0) {
+                aiMsg["message_id"] = message_id;
+            }
+
+            // 广播 AI 回复到群组所有成员
+            std::vector<int> users = groupModel_.queryGroupUsers(groupid);
+
+            std::lock_guard<std::mutex> lock(connMutex_);
+            for (int id : users) {
+                if (id == 999999) continue; // 跳过 AI 自己
+
+                auto it = userConnMap_.find(id);
+                if (it != userConnMap_.end()) {
+                    codecSend(it->second, aiMsg.dump());
+                } else {
+                    User user = userModel_.query(id);
+                    if (user.id() != -1 && user.state() == "online") {
+                        redis_.publish(id, aiMsg.dump());
+                    } else {
+                        offlineMsgModel_.insert(id, aiMsg.dump());
+                    }
+                }
+            }
+
+        } catch (const std::exception& e) {
+            LOG_ERROR << "AI service error: " << e.what();
+        }
+    }).detach();
+}
+
+std::string ChatService::callAIService(const std::string& message, const std::vector<std::string>& context) {
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        LOG_ERROR << "curl_easy_init failed";
+        return "抱歉，AI 服务暂时不可用";
+    }
+
+    // 构建请求 JSON
+    json payload;
+    payload["message"] = message;
+    payload["context"] = json::array();
+
+    // TODO: 添加上下文历史
+    for (const auto& ctx : context) {
+        payload["context"].push_back(ctx);
+    }
+
+    std::string postData = payload.dump();
+    std::string response;
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:5000/api/chat");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        LOG_ERROR << "curl_easy_perform failed: " << curl_easy_strerror(res);
+        return "抱歉，AI 服务连接失败";
+    }
+
+    // 解析响应
+    try {
+        json responseJson = json::parse(response);
+        if (responseJson["success"].get<bool>()) {
+            return responseJson["response"].get<std::string>();
+        } else {
+            std::string errorMsg = responseJson.contains("error") ? responseJson["error"].get<std::string>() : "unknown error";
+            LOG_ERROR << "AI service error: " << errorMsg;
+            return "抱歉，AI 处理请求时出错";
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR << "Failed to parse AI response: " << e.what();
+        return "抱歉，AI 响应解析失败";
     }
 }
 

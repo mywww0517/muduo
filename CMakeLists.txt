@@ -39,7 +39,7 @@ add_executable(chatserver
     src/redis/redis.cpp
     src/common/crypto.cpp
 )
-target_link_libraries(chatserver ${MUDUO_LIBS} mysqlclient crypto hiredis)
+target_link_libraries(chatserver ${MUDUO_LIBS} mysqlclient crypto hiredis curl)
 
 add_executable(echoserver
     src/server/echoserver.cpp

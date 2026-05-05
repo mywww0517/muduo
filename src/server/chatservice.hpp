@@ -55,6 +55,10 @@ public:
     void queryHistory(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
     void messageReadAck(const muduo::net::TcpConnectionPtr& conn, json& js, muduo::Timestamp time);
 
+    // v2.0 AI 功能
+    void handleAIRequest(int groupid, int userid, const std::string& message);
+    std::string callAIService(const std::string& message, const std::vector<std::string>& context = {});
+
     void clientCloseException(const muduo::net::TcpConnectionPtr& conn);
     void reset();
 

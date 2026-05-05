@@ -58,6 +58,9 @@ enum MsgId{
     RECALL_MESSAGE_ACK          = 62,
     QUERY_HISTORY_MSG           = 63,
     QUERY_HISTORY_ACK           = 64,
+
+    // AI 功能 (v2.0)
+    AI_CHAT_MSG                 = 70,
 };
 
 #endif
