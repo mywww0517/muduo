@@ -47,48 +47,6 @@ private:
         }
     }
 
-/*  以下是旧版函数（没使用codec）
-
-    void onMessage(const TcpConnectionPtr &conn, Buffer *buf, Timestamp time){
-        std::string received = buf->retrieveAllAsString();
-        LOG_INFO << "收到消息: " << received;
-
-        //解析JSON
-        try{
-            json request = parseMessage(received);
-
-            int msgid = request["msgid"].get<int>();
-
-            switch(msgid){
-            case PING_MSG:{
-                LOG_INFO << "Got PING from: " << conn->peerAddress().toIpPort();
-
-                std::string response = makeMessage(PONG_MSG,"pong");
-                conn->send(response);
-                LOG_INFO << "Send PONG to: " << response;
-                break;
-            }
-            default: {
-                LOG_INFO << "Unknown msgid: " << msgid;
-
-                json errResp;
-                errResp["msgid"] = -1;
-                errResp["data"] = "Unknown msgid";
-                conn->send(errResp.dump());
-                break;
-            }
-            }
-        }
-        catch (const json::exception &e){
-            LOG_ERROR << "JSON解析失败：" << e.what();
-
-            json errResp;
-            errResp["msgid"] = -1;
-            errResp["error"] = "invaild json";
-            conn->send(errResp.dump());
-        }
-    } 
-*/
 
      void onJsonMessage(const TcpConnectionPtr &conn, const std::string &message, Timestamp time){
         //改动：不再直接从buf读取消息
